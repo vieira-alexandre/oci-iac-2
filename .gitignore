@@ -1,0 +1,23 @@
+# Terraform state files
+*.tfstate
+*.tfstate.backup
+
+# Terraform plan files
+*.tfplan
+
+# Terraform variable files
+*.tfvars
+*.tfvars.json
+
+# Crash log files
+crash.log
+
+# Terraform provider plugins
+.terraform/
+*.zip
+*.tar.gz
+
+# Hidden files
+.DS_Store
+/.idea/
+/secrets/

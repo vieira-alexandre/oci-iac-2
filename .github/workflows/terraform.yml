@@ -1,0 +1,138 @@
+name: Terraform OCI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # (opcional para futuras integrações OIDC)
+
+env:
+  TF_INPUT: false
+  # === Secrets (credenciais sensíveis) ===
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+  TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+  TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  # TF_VAR_private_key_path será definido dinamicamente após gerar arquivo
+  # === Variables (não sensíveis) definidas em Settings > Variables do repositório ===
+  TF_VAR_region: ${{ vars.OCI_REGION }}
+  TF_VAR_project_prefix: ${{ vars.PROJECT_PREFIX }}
+  TF_VAR_vcn_cidr: ${{ vars.VCN_CIDR }}
+  TF_VAR_public_subnet_cidr: ${{ vars.PUBLIC_SUBNET_CIDR }}
+  TF_VAR_instance_shape: ${{ vars.INSTANCE_SHAPE }}
+  TF_VAR_instance_ocpus: ${{ vars.INSTANCE_OCPUS }}
+  TF_VAR_instance_memory_gbs: ${{ vars.INSTANCE_MEMORY_GBS }}
+  TF_VAR_image_operating_system: ${{ vars.IMAGE_OPERATING_SYSTEM }}
+  TF_VAR_image_operating_system_version: ${{ vars.IMAGE_OPERATING_SYSTEM_VERSION }}
+  TF_VAR_image_id: ${{ vars.IMAGE_ID }} # pode ficar vazio
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Definir defaults para variáveis não sensíveis (se ausentes)
+        run: |
+          [ -z "${TF_VAR_region}" ] && echo "TF_VAR_region=sa-saopaulo-1" >> $GITHUB_ENV
+          [ -z "${TF_VAR_project_prefix}" ] && echo "TF_VAR_project_prefix=prod" >> $GITHUB_ENV
+          [ -z "${TF_VAR_vcn_cidr}" ] && echo "TF_VAR_vcn_cidr=10.0.0.0/16" >> $GITHUB_ENV
+          [ -z "${TF_VAR_public_subnet_cidr}" ] && echo "TF_VAR_public_subnet_cidr=10.0.1.0/24" >> $GITHUB_ENV
+          [ -z "${TF_VAR_instance_shape}" ] && echo "TF_VAR_instance_shape=VM.Standard.E4.Flex" >> $GITHUB_ENV
+          [ -z "${TF_VAR_instance_ocpus}" ] && echo "TF_VAR_instance_ocpus=1" >> $GITHUB_ENV
+          [ -z "${TF_VAR_instance_memory_gbs}" ] && echo "TF_VAR_instance_memory_gbs=8" >> $GITHUB_ENV
+          [ -z "${TF_VAR_image_operating_system}" ] && echo "TF_VAR_image_operating_system=Oracle Linux" >> $GITHUB_ENV
+          [ -z "${TF_VAR_image_operating_system_version}" ] && echo "TF_VAR_image_operating_system_version=9" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+
+      - name: Criar arquivo de chave privada
+        run: |
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > $RUNNER_TEMP/oci_api_key.pem
+          chmod 600 $RUNNER_TEMP/oci_api_key.pem
+          ls -l $RUNNER_TEMP/oci_api_key.pem
+        shell: bash
+
+      - name: Exportar TF_VAR_private_key_path
+        run: echo "TF_VAR_private_key_path=$RUNNER_TEMP/oci_api_key.pem" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Fmt Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -no-color -out=tfplan
+
+      - name: Mostrar resumo do plano
+        run: terraform show -no-color tfplan | head -n 200
+
+      - name: Publicar artefato do plano completo
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+
+  apply:
+    if: github.ref == 'refs/heads/main'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Definir defaults para variáveis não sensíveis (se ausentes)
+        run: |
+          [ -z "${TF_VAR_region}" ] && echo "TF_VAR_region=sa-saopaulo-1" >> $GITHUB_ENV
+          [ -z "${TF_VAR_project_prefix}" ] && echo "TF_VAR_project_prefix=prod" >> $GITHUB_ENV
+          [ -z "${TF_VAR_vcn_cidr}" ] && echo "TF_VAR_vcn_cidr=10.0.0.0/16" >> $GITHUB_ENV
+          [ -z "${TF_VAR_public_subnet_cidr}" ] && echo "TF_VAR_public_subnet_cidr=10.0.1.0/24" >> $GITHUB_ENV
+          [ -z "${TF_VAR_instance_shape}" ] && echo "TF_VAR_instance_shape=VM.Standard.E4.Flex" >> $GITHUB_ENV
+          [ -z "${TF_VAR_instance_ocpus}" ] && echo "TF_VAR_instance_ocpus=1" >> $GITHUB_ENV
+          [ -z "${TF_VAR_instance_memory_gbs}" ] && echo "TF_VAR_instance_memory_gbs=8" >> $GITHUB_ENV
+          [ -z "${TF_VAR_image_operating_system}" ] && echo "TF_VAR_image_operating_system=Oracle Linux" >> $GITHUB_ENV
+          [ -z "${TF_VAR_image_operating_system_version}" ] && echo "TF_VAR_image_operating_system_version=9" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+
+      - name: Criar arquivo de chave privada
+        run: |
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > $RUNNER_TEMP/oci_api_key.pem
+          chmod 600 $RUNNER_TEMP/oci_api_key.pem
+        shell: bash
+
+      - name: Exportar TF_VAR_private_key_path
+        run: echo "TF_VAR_private_key_path=$RUNNER_TEMP/oci_api_key.pem" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Download plano aprovado
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: .
+
+      - name: Terraform Apply (auto-approve desabilitado por segurança)
+        run: terraform apply -no-color tfplan
