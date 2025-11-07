@@ -3,6 +3,7 @@
 terraform.tfplan
 plan_logs.txt
 apply_logs.txt
+backend.local.hcl
 
 # Hidden files
 .DS_Store
