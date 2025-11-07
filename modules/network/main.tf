@@ -30,9 +30,8 @@ resource "oci_core_security_list" "public" {
   vcn_id         = oci_core_vcn.this.id
   display_name   = "${var.dns_label_prefix}-public-sl"
 
-  # Ingress para SSH
   ingress_security_rules {
-    protocol    = "6" # TCP
+    protocol    = "6"
     source      = "0.0.0.0/0"
     description = "SSH"
     tcp_options {
@@ -41,7 +40,6 @@ resource "oci_core_security_list" "public" {
     }
   }
 
-  # Ingress para HTTP
   ingress_security_rules {
     protocol    = "6"
     source      = "0.0.0.0/0"
@@ -52,7 +50,6 @@ resource "oci_core_security_list" "public" {
     }
   }
 
-  # Ingress para HTTPS
   ingress_security_rules {
     protocol    = "6"
     source      = "0.0.0.0/0"
@@ -71,12 +68,12 @@ resource "oci_core_security_list" "public" {
 }
 
 resource "oci_core_subnet" "public" {
-  compartment_id      = var.compartment_ocid
-  vcn_id              = oci_core_vcn.this.id
-  cidr_block          = var.public_subnet_cidr
-  display_name        = "${var.dns_label_prefix}-public-subnet"
-  dns_label           = "pub"
-  route_table_id      = oci_core_route_table.public.id
-  security_list_ids   = [oci_core_security_list.public.id]
+  compartment_id             = var.compartment_ocid
+  vcn_id                     = oci_core_vcn.this.id
+  cidr_block                 = var.public_subnet_cidr
+  display_name               = "${var.dns_label_prefix}-public-subnet"
+  dns_label                  = "pub"
+  route_table_id             = oci_core_route_table.public.id
+  security_list_ids          = [oci_core_security_list.public.id]
   prohibit_public_ip_on_vnic = false
 }
