@@ -142,7 +142,7 @@ jobs:
           terraform init -reconfigure -input=false \
             -backend-config="bucket=${TF_VAR_backend_bucket}" \
             -backend-config="key=${TF_VAR_backend_state_key}" \
-            -backend-config="endpoints.s3=${TF_VAR_s3_endpoint}" \
+            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
             -backend-config="access_key=${TF_VAR_s3_access_key}" \
             -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
             -backend-config="region=us-east-1" \
@@ -265,7 +265,7 @@ jobs:
           terraform init -reconfigure -input=false \
             -backend-config="bucket=${TF_VAR_backend_bucket}" \
             -backend-config="key=${TF_VAR_backend_state_key}" \
-            -backend-config="endpoints.s3=${TF_VAR_s3_endpoint}" \
+            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
             -backend-config="access_key=${TF_VAR_s3_access_key}" \
             -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
             -backend-config="region=us-east-1" \
