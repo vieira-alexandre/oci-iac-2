@@ -24,4 +24,3 @@ output "backend_s3_access_key" {
   description = "Access key (exposta apenas para depuração interna)."
   sensitive   = true
 }
-
