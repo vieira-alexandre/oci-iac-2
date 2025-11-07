@@ -1,4 +1,4 @@
-name: Terraform OCI RM
+name: Terraform
 
 on:
   push:
@@ -9,62 +9,68 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   TF_INPUT: false
-  # === Secrets (credenciais sensíveis) ===
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
   TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
   TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
   TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-  # OCID do stack do Resource Manager (criado previamente apontando para este repositório)
-  STACK_OCID: ${{ secrets.RESOURCE_MANAGER_STACK_OCID }}
-  # === Variables (não sensíveis) definidas em Settings > Variables do repositório (opcionais para override) ===
   TF_VAR_region: ${{ vars.OCI_REGION }}
-#  TF_VAR_project_prefix: ${{ vars.PROJECT_PREFIX }}
-#  TF_VAR_vcn_cidr: ${{ vars.VCN_CIDR }}
-#  TF_VAR_public_subnet_cidr: ${{ vars.PUBLIC_SUBNET_CIDR }}
-#  TF_VAR_instance_shape: ${{ vars.INSTANCE_SHAPE }}
-#  TF_VAR_instance_ocpus: ${{ vars.INSTANCE_OCPUS }}
-#  TF_VAR_instance_memory_gbs: ${{ vars.INSTANCE_MEMORY_GBS }}
-#  TF_VAR_image_operating_system: ${{ vars.IMAGE_OPERATING_SYSTEM }}
-#  TF_VAR_image_operating_system_version: ${{ vars.IMAGE_OPERATING_SYSTEM_VERSION }}
-#  TF_VAR_image_id: ${{ vars.IMAGE_ID }}
+  TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+  TF_VAR_backend_bucket: ${{ vars.TF_BACKEND_BUCKET }}
+  TF_VAR_backend_state_key: ${{ vars.TF_BACKEND_STATE_KEY }}
+  TF_VAR_s3_access_key: ${{ secrets.S3_ACCESS_KEY }}
+  TF_VAR_s3_secret_key: ${{ secrets.S3_SECRET_KEY }}
 
 jobs:
   plan:
+    name: terraform plan
     runs-on: ubuntu-latest
     outputs:
-      plan_job_id: ${{ steps.set-output-plan-id.outputs.plan_job_id }}
+      plan_path: ${{ steps.store-plan.outputs.plan_path }}
     steps:
-      - name: Checkout (para referência, não usado pelo RM diretamente)
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Definir defaults para variáveis não sensíveis (se ausentes)
         run: |
-          [ -z "${TF_VAR_region}" ] && echo "TF_VAR_region=sa-saopaulo-1" >> $GITHUB_ENV
           [ -z "${TF_VAR_project_prefix}" ] && echo "TF_VAR_project_prefix=prod" >> $GITHUB_ENV
           [ -z "${TF_VAR_vcn_cidr}" ] && echo "TF_VAR_vcn_cidr=10.0.0.0/16" >> $GITHUB_ENV
           [ -z "${TF_VAR_public_subnet_cidr}" ] && echo "TF_VAR_public_subnet_cidr=10.0.1.0/24" >> $GITHUB_ENV
-          [ -z "${TF_VAR_instance_shape}" ] && echo "TF_VAR_instance_shape=VM.Standard.E4.Flex" >> $GITHUB_ENV
+          [ -z "${TF_VAR_instance_shape}" ] && echo "TF_VAR_instance_shape=VM.Standard.E2.1.Micro" >> $GITHUB_ENV
           [ -z "${TF_VAR_instance_ocpus}" ] && echo "TF_VAR_instance_ocpus=1" >> $GITHUB_ENV
           [ -z "${TF_VAR_instance_memory_gbs}" ] && echo "TF_VAR_instance_memory_gbs=8" >> $GITHUB_ENV
           [ -z "${TF_VAR_image_operating_system}" ] && echo "TF_VAR_image_operating_system=Oracle Linux" >> $GITHUB_ENV
           [ -z "${TF_VAR_image_operating_system_version}" ] && echo "TF_VAR_image_operating_system_version=9" >> $GITHUB_ENV
-        shell: bash
+          # Defaults backend se ausentes
+          REPO_SLUG="${GITHUB_REPOSITORY#*/}" || REPO_SLUG="repo"
+          SANITIZED=$(echo "$REPO_SLUG" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
+          [ -z "${TF_VAR_backend_bucket}" ] && echo "TF_VAR_backend_bucket=tfstate-${SANITIZED}" >> $GITHUB_ENV
+          [ -z "${TF_VAR_backend_state_key}" ] && echo "TF_VAR_backend_state_key=terraform/${SANITIZED}/terraform.tfstate" >> $GITHUB_ENV
 
-      - name: Criar arquivo de chave privada OCI
+      - name: Verificar variáveis obrigatórias de backend (exceto endpoint que será calculado)
         run: |
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > $RUNNER_TEMP/oci_api_key.pem
-          chmod 600 $RUNNER_TEMP/oci_api_key.pem
-        shell: bash
+          missing=""
+          for v in TF_VAR_backend_bucket TF_VAR_backend_state_key TF_VAR_s3_access_key TF_VAR_s3_secret_key; do
+            if [ -z "${!v}" ]; then echo "Variável $v ausente"; missing="1"; fi
+          done
+          [ -n "$missing" ] && exit 1 || echo "Variáveis essenciais presentes"
 
-      - name: Instalar OCI CLI
+      - name: Materializar chave privada para OCI CLI
+        run: |
+          echo "Salvando chave privada em arquivo temporário para uso do OCI CLI"
+          echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
+          chmod 600 $RUNNER_TEMP/oci_api_key.pem
+
+      - name: Instalar OCI CLI (para bootstrap do bucket)
         run: |
           pip install --quiet --upgrade oci-cli
           oci --version
-        shell: bash
 
       - name: Configurar OCI CLI
         run: |
@@ -78,123 +84,106 @@ jobs:
           key_file=$RUNNER_TEMP/oci_api_key.pem
           EOF
           chmod 600 ~/.oci/config
-          echo "Config criado:"; grep region ~/.oci/config
-        shell: bash
 
-      - name: (Opcional) Fixar commit atual no Stack (pin)
-        if: env.STACK_OCID != ''
+      - name: Bootstrap bucket Object Storage (idempotente + calcular endpoint se ausente)
         run: |
-          echo "Fixando commit $GITHUB_SHA no stack $STACK_OCID"
-          # Tenta atualizar fonte com commitId. Estrutura pode variar conforme versão do CLI.
-          # Primeiro tenta formato GIT_CONFIG_SOURCE.
-          cat > git_config.json <<'JSON'
-          {
-            "configSourceType": "GIT_CONFIG_SOURCE",
-            "branchName": "main",
-            "commitId": "GITHUB_SHA_PLACEHOLDER"
-          }
-          JSON
-          sed -i "s/GITHUB_SHA_PLACEHOLDER/$GITHUB_SHA/" git_config.json || sed -i "" "s/GITHUB_SHA_PLACEHOLDER/$GITHUB_SHA/" git_config.json || true
-          echo "Payload config source:"; cat git_config.json
-          oci resource-manager stack update --stack-id "$STACK_OCID" --config-source file://git_config.json --force && PIN_RESULT=ok || PIN_RESULT=fail
-          if [ "$PIN_RESULT" = "fail" ]; then
-            echo "Falha ao pin de commit via GIT_CONFIG_SOURCE, tentando formato alternativo (GitHub)."
-            cat > git_config_alt.json <<'JSON'
-            {
-              "configSourceType": "GITHUB_ACCESS_TOKEN",
-              "branchName": "main",
-              "commitId": "GITHUB_SHA_PLACEHOLDER"
-            }
-            JSON
-            sed -i "s/GITHUB_SHA_PLACEHOLDER/$GITHUB_SHA/" git_config_alt.json || sed -i "" "s/GITHUB_SHA_PLACEHOLDER/$GITHUB_SHA/" git_config_alt.json || true
-            oci resource-manager stack update --stack-id "$STACK_OCID" --config-source file://git_config_alt.json --force || echo "Falha também no formato alternativo; prosseguindo sem pin."
-          fi
-        shell: bash
-
-      - name: Criar job de PLAN no Resource Manager
-        id: create-plan
-        run: |
-          if [ -z "${STACK_OCID}" ]; then echo "STACK_OCID não definido em secret RESOURCE_MANAGER_STACK_OCID"; exit 1; fi
-          echo "Iniciando PLAN para stack $STACK_OCID"
-          PLAN_JOB_ID=$(oci resource-manager job create --stack-id "$STACK_OCID" --operation PLAN --query 'data.id' --raw-output)
-          echo "PLAN job id: $PLAN_JOB_ID"
-          echo "plan_job_id=$PLAN_JOB_ID" >> $GITHUB_ENV
-          echo "plan_job_id=$PLAN_JOB_ID" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Aguardar conclusão do PLAN
-        run: |
-          PLAN_JOB_ID=${plan_job_id:-$PLAN_JOB_ID}
-          [ -z "$PLAN_JOB_ID" ] && PLAN_JOB_ID="$plan_job_id" || true
-          echo "Monitorando job $PLAN_JOB_ID"
-          for i in $(seq 1 60); do
-            STATE=$(oci resource-manager job get --job-id "$PLAN_JOB_ID" --query 'data."lifecycle-state"' --raw-output)
-            echo "[$i] Estado: $STATE"
-            if [ "$STATE" = "SUCCEEDED" ]; then break; fi
-            if [ "$STATE" = "FAILED" ] || [ "$STATE" = "CANCELED" ]; then echo "Job PLAN falhou"; exit 1; fi
-            sleep 15
-          done
-          FINAL_STATE=$(oci resource-manager job get --job-id "$PLAN_JOB_ID" --query 'data."lifecycle-state"' --raw-output)
-          [ "$FINAL_STATE" = "SUCCEEDED" ] || { echo "Timeout aguardando SUCCEEDED"; exit 1; }
-        shell: bash
-
-      - name: Baixar logs do PLAN
-        id: fetch-plan-logs
-        run: |
-          PLAN_JOB_ID=${{ steps.create-plan.outputs.plan_job_id }}
-          oci resource-manager job get-job-logs-content --job-id "$PLAN_JOB_ID" > plan_logs.txt || echo "Falha ao obter logs";
-          head -n 50 plan_logs.txt || true
-        shell: bash
-
-      - name: Resumo dos logs do PLAN (visualização)
-        run: |
-          echo '### Terraform PLAN - Resumo' >> $GITHUB_STEP_SUMMARY
-          if grep -qE '^Plan:|No changes.' plan_logs.txt; then
-            RESUMO=$(grep -E '^Plan:|No changes.' plan_logs.txt | tail -n 1)
-            echo "Linha resumo: $RESUMO"
-            echo "Resumo bruto:" >> $GITHUB_STEP_SUMMARY
-            echo "\`$RESUMO\`" >> $GITHUB_STEP_SUMMARY
+          BUCKET="${TF_VAR_backend_bucket}"
+          COMPARTMENT="${TF_VAR_compartment_ocid}"
+          echo "Verificando namespace..."
+          NAMESPACE=$(oci os ns get --query 'data' --raw-output)
+          echo "Namespace: $NAMESPACE"
+          # Construir endpoint se não fornecido
+          if [ -z "${TF_VAR_s3_endpoint}" ]; then
+            ENDPOINT="https://${NAMESPACE}.compat.objectstorage.${TF_VAR_region}.oraclecloud.com"
+            echo "TF_VAR_s3_endpoint=${ENDPOINT}" >> $GITHUB_ENV
+            export TF_VAR_s3_endpoint=${ENDPOINT}
+            echo "Endpoint S3 calculado: ${ENDPOINT}"
           else
-            echo "(Não encontrado padrão 'Plan:' ou 'No changes.' nos logs)" >> $GITHUB_STEP_SUMMARY
+            echo "Usando endpoint fornecido: ${TF_VAR_s3_endpoint}"
           fi
-          echo '' >> $GITHUB_STEP_SUMMARY
-          echo 'Primeiras linhas:' >> $GITHUB_STEP_SUMMARY
-          head -n 25 plan_logs.txt | sed 's/`/\`/g' >> $GITHUB_STEP_SUMMARY
-          TOTAL_LINES=$(wc -l < plan_logs.txt || echo 0)
-          if [ "$TOTAL_LINES" -gt 25 ]; then echo '' >> $GITHUB_STEP_SUMMARY; echo '...(truncado, veja artefato completo)...' >> $GITHUB_STEP_SUMMARY; fi
-        shell: bash
+          echo "Checando se bucket existe..."
+          if oci os bucket get --namespace-name "$NAMESPACE" --bucket-name "$BUCKET" >/dev/null 2>&1; then
+            echo "Bucket '$BUCKET' já existe."
+          else
+            echo "Criando bucket '$BUCKET' no compartment $COMPARTMENT"
+            oci os bucket create --name "$BUCKET" --compartment-id "$COMPARTMENT" --public-access-type NoPublicAccess --storage-tier Standard || { echo "Falha ao criar bucket"; exit 1; }
+          fi
+          echo "Bucket pronto."
 
-      - name: Publicar artefatos do PLAN
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+          cli_config_credentials_token: ${{ secrets.TF_CLOUD_TOKEN || '' }}
+
+      - name: Cache plugins Terraform
+        uses: actions/cache@v4
+        with:
+          path: .terraform
+          key: terraform-${{ runner.os }}-${{ hashFiles('.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-${{ runner.os }}-
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${TF_VAR_backend_bucket}" \
+            -backend-config="key=${TF_VAR_backend_state_key}" \
+            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
+            -backend-config="access_key=${TF_VAR_s3_access_key}" \
+            -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
+            -backend-config="region=us-east-1" \
+            -backend-config="skip_credentials_validation=true" \
+            -backend-config="skip_region_validation=true" \
+            -backend-config="skip_requesting_account_id=true" \
+            -backend-config="force_path_style=true" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Fmt (check)
+        run: terraform fmt -check -recursive || true
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          set -o pipefail
+          terraform plan -no-color -out=tfplan | tee plan.log
+
+      - name: Armazenar plano como artefato
+        id: store-plan
+        run: |
+          echo "plan_path=tfplan" >> $GITHUB_OUTPUT
+
+      - name: Upload artefatos (plan + logs)
         uses: actions/upload-artifact@v4
         with:
-          name: resource-manager-plan
-          path: plan_logs.txt
+          name: terraform-plan
+          path: |
+            tfplan
+            plan.log
 
-      - name: (Opcional) Atualizar variáveis do Stack
-        if: env.STACK_OCID != ''
+      - name: Resumo do PLAN
         run: |
-          # Exemplo: atualizar variáveis simples (key=value). Ajuste conforme necessário.
-          # Lista de variáveis que podem ser enviadas: region, project_prefix, vcn_cidr, public_subnet_cidr, instance_shape, instance_ocpus, instance_memory_gbs
-          VARS_JSON=$(jq -n \
-            --arg region "${TF_VAR_region}" \
-            --arg project_prefix "${TF_VAR_project_prefix}" \
-            --arg vcn_cidr "${TF_VAR_vcn_cidr}" \
-            --arg public_subnet_cidr "${TF_VAR_public_subnet_cidr}" \
-            --arg instance_shape "${TF_VAR_instance_shape}" \
-            --arg instance_ocpus "${TF_VAR_instance_ocpus}" \
-            --arg instance_memory_gbs "${TF_VAR_instance_memory_gbs}" \
-            '{region:$region, project_prefix:$project_prefix, vcn_cidr:$vcn_cidr, public_subnet_cidr:$public_subnet_cidr, instance_shape:$instance_shape, instance_ocpus:$instance_ocpus, instance_memory_gbs:$instance_memory_gbs}')
-          echo "Payload variáveis: $VARS_JSON"
-          # Atualiza o stack (não recria). Se falhar, continua.
-          oci resource-manager stack update --stack-id "$STACK_OCID" --variables "$VARS_JSON" --force || echo "Falha ao atualizar variáveis (ignorando)"
-        shell: bash
+          echo '### Terraform PLAN - Resumo' >> $GITHUB_STEP_SUMMARY
+          if grep -qE '^Plan:' plan.log; then
+            RESUMO=$(grep -E '^Plan:' plan.log | tail -n 1)
+            echo "Resumo: $RESUMO" >> $GITHUB_STEP_SUMMARY
+          elif grep -q 'No changes.' plan.log; then
+            echo 'No changes.' >> $GITHUB_STEP_SUMMARY
+          else
+            echo '(Não encontrado padrão Plan: ou No changes.)' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '\nPrimeiras linhas:' >> $GITHUB_STEP_SUMMARY
+          head -n 25 plan.log | sed 's/`/\`/g' >> $GITHUB_STEP_SUMMARY
 
-      - name: Definir saída do job (redundante para compatibilidade)
-        id: set-output-plan-id
-        run: echo "plan_job_id=${{ steps.create-plan.outputs.plan_job_id }}" >> $GITHUB_OUTPUT
-        shell: bash
+      - name: Limpeza chave privada
+        if: always()
+        run: rm -f $RUNNER_TEMP/oci_api_key.pem
 
   apply:
+    name: terraform apply
     if: github.ref == 'refs/heads/main'
     needs: plan
     runs-on: ubuntu-latest
@@ -203,20 +192,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Criar arquivo de chave privada OCI
+      - name: Recuperar artefatos do PLAN
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: ./
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Cache plugins Terraform
+        uses: actions/cache@v4
+        with:
+          path: .terraform
+          key: terraform-${{ runner.os }}-${{ hashFiles('.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-${{ runner.os }}-
+
+      - name: Apply (usando plano salvo)
         run: |
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > $RUNNER_TEMP/oci_api_key.pem
+          echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
           chmod 600 $RUNNER_TEMP/oci_api_key.pem
-        shell: bash
-
-      - name: Instalar OCI CLI
-        run: |
-          pip install --quiet --upgrade oci-cli
-          oci --version
-        shell: bash
-
-      - name: Configurar OCI CLI
-        run: |
           mkdir -p ~/.oci
           cat > ~/.oci/config <<EOF
           [DEFAULT]
@@ -227,74 +225,49 @@ jobs:
           key_file=$RUNNER_TEMP/oci_api_key.pem
           EOF
           chmod 600 ~/.oci/config
-        shell: bash
-
-      - name: Criar job de APPLY usando plano aprovado
-        id: create-apply
-        run: |
-          PLAN_JOB_ID=${{ needs.plan.outputs.plan_job_id }}
-          if [ -z "${STACK_OCID}" ]; then echo "STACK_OCID não definido"; exit 1; fi
-          if [ -z "$PLAN_JOB_ID" ]; then echo "PLAN_JOB_ID não recebido"; exit 1; fi
-          echo "Iniciando APPLY para stack $STACK_OCID usando plano $PLAN_JOB_ID"
-          APPLY_JOB_ID=$(oci resource-manager job create --stack-id "$STACK_OCID" --operation APPLY --execution-plan-strategy FROM_PLAN_JOB --execution-plan-job-id "$PLAN_JOB_ID" --query 'data.id' --raw-output)
-          echo "APPLY job id: $APPLY_JOB_ID"
-          echo "apply_job_id=$APPLY_JOB_ID" >> $GITHUB_ENV
-        shell: bash
-
-      - name: Aguardar conclusão do APPLY
-        run: |
-          APPLY_JOB_ID=${apply_job_id:-$APPLY_JOB_ID}
-          echo "Monitorando job $APPLY_JOB_ID"
-          for i in $(seq 1 80); do
-            STATE=$(oci resource-manager job get --job-id "$APPLY_JOB_ID" --query 'data."lifecycle-state"' --raw-output)
-            echo "[$i] Estado: $STATE"
-            if [ "$STATE" = "SUCCEEDED" ]; then break; fi
-            if [ "$STATE" = "FAILED" ] || [ "$STATE" = "CANCELED" ]; then echo "Job APPLY falhou"; exit 1; fi
-            sleep 15
-          done
-          FINAL_STATE=$(oci resource-manager job get --job-id "$APPLY_JOB_ID" --query 'data."lifecycle-state"' --raw-output)
-          [ "$FINAL_STATE" = "SUCCEEDED" ] || { echo "Timeout aguardando SUCCEEDED"; exit 1; }
-        shell: bash
-
-      - name: Baixar logs do APPLY
-        run: |
-          APPLY_JOB_ID=$APPLY_JOB_ID
-          oci resource-manager job get-job-logs-content --job-id "$APPLY_JOB_ID" > apply_logs.txt || echo "Falha ao obter logs";
-          tail -n 50 apply_logs.txt || true
-        shell: bash
-
-      - name: Resumo dos logs do APPLY (visualização)
-        run: |
-          echo '### Terraform APPLY - Resumo' >> $GITHUB_STEP_SUMMARY
-          STATE=$(oci resource-manager job get --job-id "$APPLY_JOB_ID" --query 'data."lifecycle-state"' --raw-output || echo 'DESCONHECIDO')
-          echo "Estado final: $STATE" >> $GITHUB_STEP_SUMMARY
-          if grep -q 'Apply complete!' apply_logs.txt; then
-            RES_APPLY=$(grep 'Apply complete!' apply_logs.txt | tail -n 1)
-            echo "Linha apply: $RES_APPLY"
-            echo "\nResultado: \`$RES_APPLY\`" >> $GITHUB_STEP_SUMMARY
-          elif grep -q 'Destroy complete!' apply_logs.txt; then
-            RES_DESTROY=$(grep 'Destroy complete!' apply_logs.txt | tail -n 1)
-            echo "Linha destroy: $RES_DESTROY"
-            echo "\nResultado: \`$RES_DESTROY\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "(Não encontrado 'Apply complete!' ou 'Destroy complete!' nos logs)" >> $GITHUB_STEP_SUMMARY
+          # Recalcula endpoint se ausente (apply job)
+          if [ -z "${TF_VAR_s3_endpoint}" ]; then
+            NAMESPACE=$(oci os ns get --query 'data' --raw-output)
+            ENDPOINT="https://${NAMESPACE}.compat.objectstorage.${TF_VAR_region}.oraclecloud.com"
+            echo "TF_VAR_s3_endpoint=${ENDPOINT}" >> $GITHUB_ENV
+            export TF_VAR_s3_endpoint=${ENDPOINT}
+            echo "Endpoint S3 calculado (apply): ${ENDPOINT}"
           fi
-          echo '\nÚltimas linhas:' >> $GITHUB_STEP_SUMMARY
-          tail -n 25 apply_logs.txt | sed 's/`/\`/g' >> $GITHUB_STEP_SUMMARY
-        shell: bash
+          terraform init -input=false \
+            -backend-config="bucket=${TF_VAR_backend_bucket}" \
+            -backend-config="key=${TF_VAR_backend_state_key}" \
+            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
+            -backend-config="access_key=${TF_VAR_s3_access_key}" \
+            -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
+            -backend-config="region=us-east-1" \
+            -backend-config="skip_credentials_validation=true" \
+            -backend-config="skip_region_validation=true" \
+            -backend-config="skip_requesting_account_id=true" \
+            -backend-config="force_path_style=true" \
+            -backend-config="encrypt=true"
+          terraform apply -no-color -input=false -auto-approve tfplan | tee apply.log
 
-      - name: Baixar Terraform state (auditoria)
-        run: |
-          # Obtém o último state do stack após APPLY
-          if [ -z "${STACK_OCID}" ]; then echo "STACK_OCID não definido"; exit 1; fi
-          oci resource-manager stack get-stack-tf-state --stack-id "$STACK_OCID" --file state_download.zip || echo "Falha ao baixar state"
-          unzip -l state_download.zip || true
-        shell: bash
-
-      - name: Publicar artefatos do APPLY
+      - name: Upload artefatos APPLY
         uses: actions/upload-artifact@v4
         with:
-          name: resource-manager-apply
-          path: |
-            apply_logs.txt
-            state_download.zip
+          name: terraform-apply
+          path: apply.log
+
+      - name: Resumo do APPLY
+        run: |
+          echo '### Terraform APPLY - Resumo' >> $GITHUB_STEP_SUMMARY
+          if grep -q 'Apply complete!' apply.log; then
+            RES=$(grep 'Apply complete!' apply.log | tail -n 1)
+            echo "${RES}" >> $GITHUB_STEP_SUMMARY
+          elif grep -q 'Destroy complete!' apply.log; then
+            RES=$(grep 'Destroy complete!' apply.log | tail -n 1)
+            echo "${RES}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo '(Não encontrado Apply complete!/Destroy complete!)' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '\nÚltimas linhas:' >> $GITHUB_STEP_SUMMARY
+          tail -n 25 apply.log | sed 's/`/\`/g' >> $GITHUB_STEP_SUMMARY
+
+      - name: Limpeza chave privada
+        if: always()
+        run: rm -f $RUNNER_TEMP/oci_api_key.pem
