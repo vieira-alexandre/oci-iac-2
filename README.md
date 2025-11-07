@@ -29,7 +29,7 @@ project_prefix = "prod"
 
 Se quiser ajustar tamanho/memória da instância:
 ```
-instance_shape = "VM.Standard.E4.Flex"
+instance_shape = "VM.Standard.E2.1.Micro"
 instance_ocpus = 1
 instance_memory_gbs = 8
 ```
@@ -64,7 +64,7 @@ Para rodar `terraform plan` e `apply` no GitHub Actions sem commit da chave priv
    - `PROJECT_PREFIX` (ex: prod)
    - `VCN_CIDR` (ex: 10.0.0.0/16)
    - `PUBLIC_SUBNET_CIDR` (ex: 10.0.1.0/24)
-   - `INSTANCE_SHAPE` (ex: VM.Standard.E4.Flex)
+   - `INSTANCE_SHAPE` (ex: VM.Standard.E2.1.Micro)
    - `INSTANCE_OCPUS` (ex: 1)
    - `INSTANCE_MEMORY_GBS` (ex: 8)
    - `IMAGE_OPERATING_SYSTEM` (ex: Oracle Linux)
