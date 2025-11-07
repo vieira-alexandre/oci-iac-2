@@ -211,6 +211,11 @@ jobs:
           restore-keys: |
             terraform-${{ runner.os }}-
 
+      - name: Instalar OCI CLI (apply job)
+        run: |
+          pip install --quiet --upgrade oci-cli
+          oci --version
+
       - name: Apply (usando plano salvo)
         run: |
           echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
