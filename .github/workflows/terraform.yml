@@ -34,6 +34,8 @@ jobs:
     outputs:
       plan_path: ${{ steps.store-plan.outputs.plan_path }}
       s3_endpoint: ${{ steps.export-endpoint.outputs.s3_endpoint }}
+      backend_bucket: ${{ steps.export-backend-values.outputs.backend_bucket }}
+      backend_state_key: ${{ steps.export-backend-values.outputs.backend_state_key }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,6 +117,12 @@ jobs:
         run: |
           echo "s3_endpoint=${TF_VAR_s3_endpoint}" >> $GITHUB_OUTPUT
 
+      - name: Exportar bucket e key usados
+        id: export-backend-values
+        run: |
+          echo "backend_bucket=${TF_VAR_backend_bucket}" >> $GITHUB_OUTPUT
+          echo "backend_state_key=${TF_VAR_backend_state_key}" >> $GITHUB_OUTPUT
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -134,7 +142,7 @@ jobs:
           terraform init -reconfigure -input=false \
             -backend-config="bucket=${TF_VAR_backend_bucket}" \
             -backend-config="key=${TF_VAR_backend_state_key}" \
-            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
+            -backend-config="endpoints.s3=${TF_VAR_s3_endpoint}" \
             -backend-config="access_key=${TF_VAR_s3_access_key}" \
             -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
             -backend-config="region=us-east-1" \
@@ -203,15 +211,24 @@ jobs:
           name: terraform-plan
           path: ./
 
-      - name: Definir endpoint do backend (do job plan)
+      - name: Definir endpoint e variáveis de backend do job plan
         run: |
-          if [ -n "${{ needs.plan.outputs.s3_endpoint }}" ]; then
-            echo "Usando endpoint S3 do plan: ${{ needs.plan.outputs.s3_endpoint }}"
-            echo "TF_VAR_s3_endpoint=${{ needs.plan.outputs.s3_endpoint }}" >> $GITHUB_ENV
-          else
-            echo "Saída s3_endpoint não encontrada; falhando para evitar divergência de backend."
-            exit 1
-          fi
+          # Endpoint
+            if [ -n "${{ needs.plan.outputs.s3_endpoint }}" ]; then
+              echo "Usando endpoint S3 do plan: ${{ needs.plan.outputs.s3_endpoint }}"
+              echo "TF_VAR_s3_endpoint=${{ needs.plan.outputs.s3_endpoint }}" >> $GITHUB_ENV
+            else
+              echo "Saída s3_endpoint não encontrada; falhando."
+              exit 1
+            fi
+          # Bucket
+            if [ -n "${{ needs.plan.outputs.backend_bucket }}" ]; then
+              echo "TF_VAR_backend_bucket=${{ needs.plan.outputs.backend_bucket }}" >> $GITHUB_ENV
+            fi
+          # State key
+            if [ -n "${{ needs.plan.outputs.backend_state_key }}" ]; then
+              echo "TF_VAR_backend_state_key=${{ needs.plan.outputs.backend_state_key }}" >> $GITHUB_ENV
+            fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -248,7 +265,7 @@ jobs:
           terraform init -reconfigure -input=false \
             -backend-config="bucket=${TF_VAR_backend_bucket}" \
             -backend-config="key=${TF_VAR_backend_state_key}" \
-            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
+            -backend-config="endpoints.s3=${TF_VAR_s3_endpoint}" \
             -backend-config="access_key=${TF_VAR_s3_access_key}" \
             -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
             -backend-config="region=us-east-1" \
