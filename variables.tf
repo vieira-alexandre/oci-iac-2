@@ -43,7 +43,7 @@ variable "public_subnet_cidr" {
 # Compute variables
 variable "instance_shape" {
   type    = string
-  default = "VM.Standard.E4.Flex"
+  default = "VM.Standard.E2.1.Micro"
 }
 variable "instance_ocpus" {
   type    = number
