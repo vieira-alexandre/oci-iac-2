@@ -1,0 +1,256 @@
+name: Terraform
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_INPUT: false
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+  TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+  TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  TF_VAR_region: ${{ vars.OCI_REGION }}
+  TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+  TF_VAR_backend_bucket: ${{ vars.TF_BACKEND_BUCKET }}
+  TF_VAR_backend_state_key: ${{ vars.TF_BACKEND_STATE_KEY }}
+  TF_VAR_object_storage_namespace: ${{ vars.TF_BACKEND_BUCKET_NAMESPACE || '' }}
+
+jobs:
+  plan:
+    name: terraform plan
+    runs-on: ubuntu-latest
+    outputs:
+      backend_bucket: ${{ steps.export-backend.outputs.backend_bucket }}
+      backend_state_key: ${{ steps.export-backend.outputs.backend_state_key }}
+      object_storage_namespace: ${{ steps.export-backend.outputs.object_storage_namespace }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Definir defaults mínimos (backend) se ausentes
+        run: |
+          set -e
+          REPO_SLUG="${GITHUB_REPOSITORY##*/}" || true
+          if [ -z "$REPO_SLUG" ]; then REPO_SLUG="repo"; fi
+          SANITIZED=$(printf "%s" "$REPO_SLUG" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-') || true
+          if [ -z "${TF_VAR_backend_bucket:-}" ]; then echo "TF_VAR_backend_bucket=tfstate-${SANITIZED}" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_backend_state_key:-}" ]; then echo "TF_VAR_backend_state_key=terraform/${SANITIZED}/terraform.tfstate" >> $GITHUB_ENV; fi
+          echo "Defaults backend aplicados (se necessário)"
+
+      - name: Verificar variáveis obrigatórias de backend
+        run: |
+          missing=""
+          for v in TF_VAR_backend_bucket TF_VAR_backend_state_key TF_VAR_tenancy_ocid TF_VAR_user_ocid TF_VAR_fingerprint TF_VAR_private_key TF_VAR_region; do
+            if [ -z "${!v}" ]; then echo "Variável $v ausente"; missing="1"; fi
+          done
+          [ -z "$missing" ] && echo "Variáveis essenciais presentes" || exit 1
+
+      - name: Materializar chave privada para OCI CLI
+        run: |
+          echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
+          chmod 600 $RUNNER_TEMP/oci_api_key.pem
+
+      - name: Instalar e configurar OCI CLI (para namespace e bucket)
+        run: |
+          pip install --quiet --upgrade oci-cli
+          mkdir -p ~/.oci
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ env.TF_VAR_region }}
+          key_file=$RUNNER_TEMP/oci_api_key.pem
+          EOF
+          chmod 600 ~/.oci/config
+          oci --version
+
+      - name: Obter namespace (se não fornecido) e garantir bucket
+        run: |
+          if [ -n "${TF_VAR_object_storage_namespace}" ]; then
+            NS="${TF_VAR_object_storage_namespace}"
+            echo "Namespace já fornecido: $NS"
+          else
+            NS=$(oci os ns get --query 'data' --raw-output)
+            echo "TF_VAR_object_storage_namespace=${NS}" >> $GITHUB_ENV
+            echo "Namespace obtido: $NS"
+          fi
+          BUCKET="${TF_VAR_backend_bucket}"; COMPARTMENT="${TF_VAR_compartment_ocid}"; NS_FINAL="${NS}";
+          if oci os bucket get --namespace-name "$NS_FINAL" --bucket-name "$BUCKET" >/dev/null 2>&1; then
+            echo "Bucket $BUCKET já existe"
+          else
+            echo "Criando bucket $BUCKET"
+            oci os bucket create --name "$BUCKET" --compartment-id "$COMPARTMENT" --public-access-type NoPublicAccess --storage-tier Standard
+          fi
+
+      - name: Exportar outputs backend e namespace
+        id: export-backend
+        run: |
+          echo "backend_bucket=${TF_VAR_backend_bucket}" >> $GITHUB_OUTPUT
+          echo "backend_state_key=${TF_VAR_backend_state_key}" >> $GITHUB_OUTPUT
+          echo "object_storage_namespace=${TF_VAR_object_storage_namespace}" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          cli_config_credentials_token: ${{ secrets.TF_CLOUD_TOKEN || '' }}
+
+      - name: Cache plugins Terraform
+        uses: actions/cache@v4
+        with:
+          path: .terraform
+          key: terraform-${{ runner.os }}-${{ hashFiles('.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-${{ runner.os }}-
+
+      - name: Terraform Init
+        run: |
+          terraform init -reconfigure -input=false \
+            -backend-config="bucket=${TF_VAR_backend_bucket}" \
+            -backend-config="namespace=${TF_VAR_object_storage_namespace}" \
+            -backend-config="region=${TF_VAR_region}" \
+            -backend-config="tenancy_ocid=${TF_VAR_tenancy_ocid}" \
+            -backend-config="user_ocid=${TF_VAR_user_ocid}" \
+            -backend-config="private_key_path=$RUNNER_TEMP/oci_api_key.pem" \
+            -backend-config="fingerprint=${TF_VAR_fingerprint}" \
+            -backend-config="key=${TF_VAR_backend_state_key}"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Fmt (check)
+        run: terraform fmt -check -recursive || true
+
+      - name: Terraform Plan
+        run: |
+          set -o pipefail
+          terraform plan -no-color -out=tfplan | tee plan.log
+
+      - name: Upload artefatos (plan + logs)
+        uses: actions/upload-artifact@v4
+        with:
+            name: terraform-plan
+            path: |
+              tfplan
+              plan.log
+
+      - name: Resumo do PLAN
+        run: |
+          echo '### Terraform PLAN - Resumo' >> $GITHUB_STEP_SUMMARY
+          if grep -qE '^Plan:' plan.log; then
+            RESUMO=$(grep -E '^Plan:' plan.log | tail -n 1)
+            echo "Resumo: $RESUMO" >> $GITHUB_STEP_SUMMARY
+          elif grep -q 'No changes.' plan.log; then
+            echo 'No changes.' >> $GITHUB_STEP_SUMMARY
+          else
+            echo '(Não encontrado padrão Plan: ou No changes.)' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '\nPrimeiras linhas:' >> $GITHUB_STEP_SUMMARY
+          head -n 25 plan.log | sed 's/`/\`/g' >> $GITHUB_STEP_SUMMARY
+
+      - name: Limpeza chave privada
+        if: always()
+        run: rm -f $RUNNER_TEMP/oci_api_key.pem
+
+  apply:
+    name: terraform apply
+    if: github.ref == 'refs/heads/main'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Recuperar artefatos do PLAN
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: ./
+
+      - name: Definir variáveis de backend do job plan
+        run: |
+          echo "TF_VAR_backend_bucket=${{ needs.plan.outputs.backend_bucket }}" >> $GITHUB_ENV
+          echo "TF_VAR_backend_state_key=${{ needs.plan.outputs.backend_state_key }}" >> $GITHUB_ENV
+          echo "TF_VAR_object_storage_namespace=${{ needs.plan.outputs.object_storage_namespace }}" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+
+      - name: Cache plugins Terraform
+        uses: actions/cache@v4
+        with:
+          path: .terraform
+          key: terraform-${{ runner.os }}-${{ hashFiles('.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-${{ runner.os }}-
+
+      - name: Materializar chave e config OCI
+        run: |
+          echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
+          chmod 600 $RUNNER_TEMP/oci_api_key.pem
+          mkdir -p ~/.oci
+          cat > ~/.oci/config <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ env.TF_VAR_region }}
+          key_file=$RUNNER_TEMP/oci_api_key.pem
+          EOF
+          chmod 600 ~/.oci/config
+
+      - name: Terraform Init (apply)
+        run: |
+          terraform init -reconfigure -input=false \
+            -backend-config="bucket=${TF_VAR_backend_bucket}" \
+            -backend-config="namespace=${TF_VAR_object_storage_namespace}" \
+            -backend-config="region=${TF_VAR_region}" \
+            -backend-config="tenancy_ocid=${TF_VAR_tenancy_ocid}" \
+            -backend-config="user_ocid=${TF_VAR_user_ocid}" \
+            -backend-config="private_key_path=$RUNNER_TEMP/oci_api_key.pem" \
+            -backend-config="fingerprint=${TF_VAR_fingerprint}" \
+            -backend-config="key=${TF_VAR_backend_state_key}"
+
+      - name: Apply (usando plano salvo)
+        run: |
+          terraform apply -no-color -input=false -auto-approve tfplan | tee apply.log
+
+      - name: Upload artefatos APPLY
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-apply
+          path: apply.log
+
+      - name: Resumo do APPLY
+        run: |
+          echo '### Terraform APPLY - Resumo' >> $GITHUB_STEP_SUMMARY
+          if grep -q 'Apply complete!' apply.log; then
+            RES=$(grep 'Apply complete!' apply.log | tail -n 1)
+            echo "${RES}" >> $GITHUB_STEP_SUMMARY
+          elif grep -q 'Destroy complete!' apply.log; then
+            RES=$(grep 'Destroy complete!' apply.log | tail -n 1)
+            echo "${RES}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo '(Não encontrado Apply complete!/Destroy complete!)' >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '\nÚltimas linhas:' >> $GITHUB_STEP_SUMMARY
+          tail -n 25 apply.log | sed 's/`/\`/g' >> $GITHUB_STEP_SUMMARY
+
+      - name: Limpeza chave privada
+        if: always()
+        run: rm -f $RUNNER_TEMP/oci_api_key.pem

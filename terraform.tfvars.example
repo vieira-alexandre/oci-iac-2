@@ -1,0 +1,17 @@
+tenancy_ocid = "ocid1.tenancy.oc1..example"
+user_ocid = "ocid1.user.oc1..example"
+fingerprint = "aa:bb:cc:dd:ee:ff:gg:hh"
+private_key_path = "${path.module}/secrets/oci_api_key.pem"
+region = "us-ashburn-1"
+compartment_ocid = "ocid1.compartment.oc1..example"
+project_prefix = "demo"
+
+vcn_cidr = "10.0.0.0/16"
+public_subnet_cidr = "10.0.1.0/24"
+
+instance_shape = "VM.Standard.E2.1.Micro"
+instance_ocpus = 1
+instance_memory_gbs = 8
+image_operating_system = "Canonical Ubuntu"
+image_operating_system_version = "24.04"
+# image_id = "" # opcional: sobrepor uma imagem específica Ubuntu se desejar
