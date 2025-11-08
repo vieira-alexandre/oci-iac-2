@@ -56,30 +56,17 @@ variable "image_operating_system_version" {
   default = "9"
 }
 
+# Backend OCI Object Storage
 variable "backend_bucket" {
   type        = string
-  description = "Nome do bucket Object Storage (compatível S3) que armazenará o terraform state."
+  description = "Nome do bucket Object Storage que armazenará o terraform state."
 }
 variable "backend_state_key" {
   type        = string
-  description = "Caminho/arquivo da chave de state dentro do bucket (ex: terraform/oci-iac/terraform.tfstate)."
-  default     = "terraform/oci-iac/terraform.tfstate"
+  description = "Caminho relativo do arquivo de state dentro do bucket (ex: terraform/oci-iac/terraform.tfstate)."
 }
-variable "s3_access_key" {
+# Namespace é automaticamente obtido (oci os ns get) no pipeline; manter opcional para uso manual.
+variable "object_storage_namespace" {
   type        = string
-  description = "Access key para endpoint S3 compatível (OCI Object Storage)."
-}
-variable "s3_secret_key" {
-  type        = string
-  description = "Secret key para endpoint S3 compatível (OCI Object Storage)."
-  sensitive   = true
-}
-variable "s3_endpoint" {
-  type        = string
-  description = "Endpoint HTTPS do serviço Object Storage compatível S3 na região (ex: https://<namespace>.compat.objectstorage.<region>.oraclecloud.com)."
-}
-variable "backend_encrypt" {
-  type        = bool
-  description = "Se o backend deve marcar encrypt=true (geralmente sim)."
-  default     = true
+  description = "Namespace do Object Storage (geralmente obtido via OCI CLI)."
 }

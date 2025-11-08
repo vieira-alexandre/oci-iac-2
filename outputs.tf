@@ -5,22 +5,14 @@ output "public_subnet_id" { value = module.network.public_subnet_id }
 
 output "backend_bucket" {
   value       = var.backend_bucket
-  description = "Bucket do backend S3/OCI usado para o state."
+  description = "Bucket do backend OCI usado para o state."
 }
 output "backend_state_key" {
   value       = var.backend_state_key
   description = "Chave (path) do objeto de state no bucket."
 }
-output "backend_s3_endpoint" {
-  value       = var.s3_endpoint
-  description = "Endpoint S3 compatível usado pelo backend."
-}
-output "backend_encrypt" {
-  value       = var.backend_encrypt
-  description = "Flag encrypt do backend."
-}
-output "backend_s3_access_key" {
-  value       = var.s3_access_key
-  description = "Access key (exposta apenas para depuração interna)."
-  sensitive   = true
+output "object_storage_namespace" {
+  value       = var.object_storage_namespace
+  description = "Namespace do Object Storage usado (se fornecido)."
+  sensitive   = false
 }

@@ -24,8 +24,7 @@ env:
   TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
   TF_VAR_backend_bucket: ${{ vars.TF_BACKEND_BUCKET }}
   TF_VAR_backend_state_key: ${{ vars.TF_BACKEND_STATE_KEY }}
-  TF_VAR_s3_access_key: ${{ secrets.S3_ACCESS_KEY }}
-  TF_VAR_s3_secret_key: ${{ secrets.S3_SECRET_KEY }}
+  TF_VAR_object_storage_namespace: ${{ vars.TF_BACKEND_BUCKET_NAMESPACE || '' }}
 
 jobs:
   plan:
@@ -33,44 +32,47 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       plan_path: ${{ steps.store-plan.outputs.plan_path }}
-      s3_endpoint: ${{ steps.export-endpoint.outputs.s3_endpoint }}
       backend_bucket: ${{ steps.export-backend-values.outputs.backend_bucket }}
       backend_state_key: ${{ steps.export-backend-values.outputs.backend_state_key }}
+      object_storage_namespace: ${{ steps.export-namespace.outputs.object_storage_namespace }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Definir defaults para variáveis não sensíveis (se ausentes)
         run: |
-          [ -z "${TF_VAR_project_prefix}" ] && echo "TF_VAR_project_prefix=prod" >> $GITHUB_ENV
-          [ -z "${TF_VAR_vcn_cidr}" ] && echo "TF_VAR_vcn_cidr=10.0.0.0/16" >> $GITHUB_ENV
-          [ -z "${TF_VAR_public_subnet_cidr}" ] && echo "TF_VAR_public_subnet_cidr=10.0.1.0/24" >> $GITHUB_ENV
-          [ -z "${TF_VAR_instance_shape}" ] && echo "TF_VAR_instance_shape=VM.Standard.E2.1.Micro" >> $GITHUB_ENV
-          [ -z "${TF_VAR_instance_ocpus}" ] && echo "TF_VAR_instance_ocpus=1" >> $GITHUB_ENV
-          [ -z "${TF_VAR_instance_memory_gbs}" ] && echo "TF_VAR_instance_memory_gbs=8" >> $GITHUB_ENV
-          [ -z "${TF_VAR_image_operating_system}" ] && echo "TF_VAR_image_operating_system=Oracle Linux" >> $GITHUB_ENV
-          [ -z "${TF_VAR_image_operating_system_version}" ] && echo "TF_VAR_image_operating_system_version=9" >> $GITHUB_ENV
-          # Defaults backend se ausentes
-          REPO_SLUG="${GITHUB_REPOSITORY#*/}" || REPO_SLUG="repo"
-          SANITIZED=$(echo "$REPO_SLUG" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')
-          [ -z "${TF_VAR_backend_bucket}" ] && echo "TF_VAR_backend_bucket=tfstate-${SANITIZED}" >> $GITHUB_ENV
-          [ -z "${TF_VAR_backend_state_key}" ] && echo "TF_VAR_backend_state_key=terraform/${SANITIZED}/terraform.tfstate" >> $GITHUB_ENV
+          set -e
+          # Usar if explícito para evitar qualquer interação estranha com -e.
+          if [ -z "${TF_VAR_project_prefix:-}" ]; then echo "TF_VAR_project_prefix=prod" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_vcn_cidr:-}" ]; then echo "TF_VAR_vcn_cidr=10.0.0.0/16" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_public_subnet_cidr:-}" ]; then echo "TF_VAR_public_subnet_cidr=10.0.1.0/24" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_instance_shape:-}" ]; then echo "TF_VAR_instance_shape=VM.Standard.E2.1.Micro" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_instance_ocpus:-}" ]; then echo "TF_VAR_instance_ocpus=1" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_instance_memory_gbs:-}" ]; then echo "TF_VAR_instance_memory_gbs=8" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_image_operating_system:-}" ]; then echo "TF_VAR_image_operating_system=Oracle Linux" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_image_operating_system_version:-}" ]; then echo "TF_VAR_image_operating_system_version=9" >> $GITHUB_ENV; fi
+          REPO_SLUG="${GITHUB_REPOSITORY##*/}"
+          if [ -z "$REPO_SLUG" ]; then REPO_SLUG="repo"; fi
+          SANITIZED=$(printf "%s" "$REPO_SLUG" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-') || true
+          if [ -z "${TF_VAR_backend_bucket:-}" ]; then echo "TF_VAR_backend_bucket=tfstate-${SANITIZED}" >> $GITHUB_ENV; fi
+          if [ -z "${TF_VAR_backend_state_key:-}" ]; then echo "TF_VAR_backend_state_key=terraform/${SANITIZED}/terraform.tfstate" >> $GITHUB_ENV; fi
+          echo "Defaults aplicados com sucesso"
 
-      - name: Verificar variáveis obrigatórias de backend (exceto endpoint que será calculado)
+      - name: Verificar variáveis obrigatórias de backend
         run: |
           missing=""
-          for v in TF_VAR_backend_bucket TF_VAR_backend_state_key TF_VAR_s3_access_key TF_VAR_s3_secret_key; do
+          for v in TF_VAR_backend_bucket TF_VAR_backend_state_key TF_VAR_tenancy_ocid TF_VAR_user_ocid TF_VAR_fingerprint TF_VAR_private_key TF_VAR_region; do
             if [ -z "${!v}" ]; then echo "Variável $v ausente"; missing="1"; fi
           done
-          [ -n "$missing" ] && exit 1 || echo "Variáveis essenciais presentes"
+          if [ -n "$missing" ]; then exit 1; else echo "Variáveis essenciais presentes"; fi
 
       - name: Materializar chave privada para OCI CLI
         run: |
-          echo "Salvando chave privada em arquivo temporário para uso do OCI CLI"
+          echo "Salvando chave privada para OCI CLI"
           echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
           chmod 600 $RUNNER_TEMP/oci_api_key.pem
 
-      - name: Instalar OCI CLI (para bootstrap do bucket)
+      - name: Instalar OCI CLI
         run: |
           pip install --quiet --upgrade oci-cli
           oci --version
@@ -88,45 +90,49 @@ jobs:
           EOF
           chmod 600 ~/.oci/config
 
-      - name: Bootstrap bucket Object Storage (idempotente + calcular endpoint se ausente)
+      - name: Obter namespace Object Storage (se não fornecido)
+        id: namespace
+        run: |
+          if [ -n "${TF_VAR_object_storage_namespace}" ]; then
+            echo "Namespace já fornecido: ${TF_VAR_object_storage_namespace}"
+            NS="${TF_VAR_object_storage_namespace}"
+          else
+            echo "Consultando namespace via OCI CLI..."
+            NS=$(oci os ns get --query 'data' --raw-output)
+            echo "TF_VAR_object_storage_namespace=${NS}" >> $GITHUB_ENV
+          fi
+          echo "Namespace final: $NS"
+          echo "object_storage_namespace=$NS" >> $GITHUB_OUTPUT
+
+      - name: Garantir bucket existe (idempotente)
         run: |
           BUCKET="${TF_VAR_backend_bucket}"
           COMPARTMENT="${TF_VAR_compartment_ocid}"
-          echo "Verificando namespace..."
-          NAMESPACE=$(oci os ns get --query 'data' --raw-output)
-          echo "Namespace: $NAMESPACE"
-          if [ -z "${TF_VAR_s3_endpoint}" ]; then
-            ENDPOINT="https://${NAMESPACE}.compat.objectstorage.${TF_VAR_region}.oraclecloud.com"
-            echo "TF_VAR_s3_endpoint=${ENDPOINT}" >> $GITHUB_ENV
-            export TF_VAR_s3_endpoint=${ENDPOINT}
-            echo "Endpoint S3 calculado: ${ENDPOINT}"
+          NS="${TF_VAR_object_storage_namespace}"
+          if [ -z "$NS" ]; then echo "Namespace vazio"; exit 1; fi
+          echo "Checando bucket $BUCKET"
+          if oci os bucket get --namespace-name "$NS" --bucket-name "$BUCKET" >/dev/null 2>&1; then
+            echo "Bucket já existe"
           else
-            echo "Usando endpoint fornecido: ${TF_VAR_s3_endpoint}"
-          fi
-          echo "Checando se bucket existe..."
-          if oci os bucket get --namespace-name "$NAMESPACE" --bucket-name "$BUCKET" >/dev/null 2>&1; then
-            echo "Bucket '$BUCKET' já existe."
-          else
-            echo "Criando bucket '$BUCKET' no compartment $COMPARTMENT"
+            echo "Criando bucket $BUCKET"
             oci os bucket create --name "$BUCKET" --compartment-id "$COMPARTMENT" --public-access-type NoPublicAccess --storage-tier Standard || { echo "Falha ao criar bucket"; exit 1; }
           fi
-          echo "Bucket pronto."
 
-      - name: Exportar endpoint calculado
-        id: export-endpoint
-        run: |
-          echo "s3_endpoint=${TF_VAR_s3_endpoint}" >> $GITHUB_OUTPUT
-
-      - name: Exportar bucket e key usados
+      - name: Exportar valores backend
         id: export-backend-values
         run: |
           echo "backend_bucket=${TF_VAR_backend_bucket}" >> $GITHUB_OUTPUT
           echo "backend_state_key=${TF_VAR_backend_state_key}" >> $GITHUB_OUTPUT
 
+      - name: Exportar namespace
+        id: export-namespace
+        run: |
+          echo "object_storage_namespace=${TF_VAR_object_storage_namespace}" >> $GITHUB_OUTPUT
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.7.5
+          terraform_version: 1.13.5
           cli_config_credentials_token: ${{ secrets.TF_CLOUD_TOKEN || '' }}
 
       - name: Cache plugins Terraform
@@ -139,21 +145,15 @@ jobs:
 
       - name: Terraform Init
         run: |
-          # Mitigar encoding chunked não suportado em OCI S3 compat
-          export AWS_DISABLE_REQUEST_PAYLOAD_HASHING=true
           terraform init -reconfigure -input=false \
             -backend-config="bucket=${TF_VAR_backend_bucket}" \
-            -backend-config="key=${TF_VAR_backend_state_key}" \
-            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
-            -backend-config="access_key=${TF_VAR_s3_access_key}" \
-            -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
-            -backend-config="region=us-east-1" \
-            -backend-config="skip_credentials_validation=true" \
-            -backend-config="skip_region_validation=true" \
-            -backend-config="skip_requesting_account_id=true" \
-            -backend-config="skip_metadata_api_check=true" \
-            -backend-config="force_path_style=true" \
-            -backend-config="encrypt=true"
+            -backend-config="namespace=${TF_VAR_object_storage_namespace}" \
+            -backend-config="region=${TF_VAR_region}" \
+            -backend-config="tenancy_ocid=${TF_VAR_tenancy_ocid}" \
+            -backend-config="user_ocid=${TF_VAR_user_ocid}" \
+            -backend-config="private_key_path=$RUNNER_TEMP/oci_api_key.pem" \
+            -backend-config="fingerprint=${TF_VAR_fingerprint}" \
+            -backend-config="key=${TF_VAR_backend_state_key}"
 
       - name: Terraform Validate
         run: terraform validate
@@ -214,29 +214,16 @@ jobs:
           name: terraform-plan
           path: ./
 
-      - name: Definir endpoint e variáveis de backend do job plan
+      - name: Definir variáveis de backend do job plan
         run: |
-          # Endpoint
-            if [ -n "${{ needs.plan.outputs.s3_endpoint }}" ]; then
-              echo "Usando endpoint S3 do plan: ${{ needs.plan.outputs.s3_endpoint }}"
-              echo "TF_VAR_s3_endpoint=${{ needs.plan.outputs.s3_endpoint }}" >> $GITHUB_ENV
-            else
-              echo "Saída s3_endpoint não encontrada; falhando."
-              exit 1
-            fi
-          # Bucket
-            if [ -n "${{ needs.plan.outputs.backend_bucket }}" ]; then
-              echo "TF_VAR_backend_bucket=${{ needs.plan.outputs.backend_bucket }}" >> $GITHUB_ENV
-            fi
-          # State key
-            if [ -n "${{ needs.plan.outputs.backend_state_key }}" ]; then
-              echo "TF_VAR_backend_state_key=${{ needs.plan.outputs.backend_state_key }}" >> $GITHUB_ENV
-            fi
+          if [ -n "${{ needs.plan.outputs.backend_bucket }}" ]; then echo "TF_VAR_backend_bucket=${{ needs.plan.outputs.backend_bucket }}" >> $GITHUB_ENV; fi
+          if [ -n "${{ needs.plan.outputs.backend_state_key }}" ]; then echo "TF_VAR_backend_state_key=${{ needs.plan.outputs.backend_state_key }}" >> $GITHUB_ENV; fi
+          if [ -n "${{ needs.plan.outputs.object_storage_namespace }}" ]; then echo "TF_VAR_object_storage_namespace=${{ needs.plan.outputs.object_storage_namespace }}" >> $GITHUB_ENV; else echo "Namespace não encontrado"; exit 1; fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.7.5
+          terraform_version: 1.13.5
 
       - name: Cache plugins Terraform
         uses: actions/cache@v4
@@ -246,12 +233,7 @@ jobs:
           restore-keys: |
             terraform-${{ runner.os }}-
 
-      - name: Instalar OCI CLI (apply job)
-        run: |
-          pip install --quiet --upgrade oci-cli
-          oci --version
-
-      - name: Apply (usando plano salvo)
+      - name: Materializar chave e config OCI
         run: |
           echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
           chmod 600 $RUNNER_TEMP/oci_api_key.pem
@@ -265,20 +247,21 @@ jobs:
           key_file=$RUNNER_TEMP/oci_api_key.pem
           EOF
           chmod 600 ~/.oci/config
-          export AWS_DISABLE_REQUEST_PAYLOAD_HASHING=true
+
+      - name: Terraform Init (apply)
+        run: |
           terraform init -reconfigure -input=false \
             -backend-config="bucket=${TF_VAR_backend_bucket}" \
-            -backend-config="key=${TF_VAR_backend_state_key}" \
-            -backend-config="endpoint=${TF_VAR_s3_endpoint}" \
-            -backend-config="access_key=${TF_VAR_s3_access_key}" \
-            -backend-config="secret_key=${TF_VAR_s3_secret_key}" \
-            -backend-config="region=us-east-1" \
-            -backend-config="skip_credentials_validation=true" \
-            -backend-config="skip_region_validation=true" \
-            -backend-config="skip_requesting_account_id=true" \
-            -backend-config="skip_metadata_api_check=true" \
-            -backend-config="force_path_style=true" \
-            -backend-config="encrypt=true"
+            -backend-config="namespace=${TF_VAR_object_storage_namespace}" \
+            -backend-config="region=${TF_VAR_region}" \
+            -backend-config="tenancy_ocid=${TF_VAR_tenancy_ocid}" \
+            -backend-config="user_ocid=${TF_VAR_user_ocid}" \
+            -backend-config="private_key_path=$RUNNER_TEMP/oci_api_key.pem" \
+            -backend-config="fingerprint=${TF_VAR_fingerprint}" \
+            -backend-config="key=${TF_VAR_backend_state_key}"
+
+      - name: Apply (usando plano salvo)
+        run: |
           terraform apply -no-color -input=false -auto-approve tfplan | tee apply.log
 
       - name: Upload artefatos APPLY
