@@ -35,9 +35,9 @@ variable "image_id" {
   default = ""
 }
 
-# Opcional: se null usa tamanho default da imagem. Defina >=50 para sobrepor.
+# Default 50GB para atender mínimo de imagens atuais; pode ser sobreposto.
 variable "boot_volume_size_gbs" {
   type        = number
-  description = "Tamanho do boot volume em GB (>=50). Null para usar default da imagem."
-  default     = null
+  description = "Tamanho do boot volume em GB (>=50). Use null para deixar provider decidir (não recomendado se imagem exigir >=50)."
+  default     = 50
 }

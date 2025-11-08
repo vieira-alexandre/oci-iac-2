@@ -3,6 +3,7 @@ output "public_subnet_id" { value = module.network.public_subnet_id }
 output "instance_id" { value = module.compute.instance_id }
 output "instance_public_ip" { value = module.compute.public_ip }
 output "instance_image_id" { value = module.compute.effective_image_id }
+output "instance_boot_volume_size_gbs" { value = module.compute.boot_volume_size_gbs }
 
 output "backend_bucket" {
   value       = var.backend_bucket
