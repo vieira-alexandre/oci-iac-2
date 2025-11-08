@@ -89,6 +89,55 @@ Cria VCN, Internet Gateway, Route Table pública, Security List com portas 22/80
 ## Módulo Compute
 Seleciona a última imagem do SO (Oracle Linux por padrão) e cria uma VM Flex com IP público. (Comentado por padrão no `main.tf`; descomente para criar.)
 
+## Acesso SSH à Instância
+A instância provisionada exige que você forneça uma chave pública via variável `ssh_authorized_keys`.
+
+1. Gere um par de chaves (se ainda não tiver):
+   - Linux/macOS:
+     ```bash
+     ssh-keygen -t ed25519 -C "meu-usuario" -f ~/.ssh/id_ed25519
+     ```
+   - Windows (PowerShell):
+     ```powershell
+     ssh-keygen -t ed25519 -C "meu-usuario" -f $env:USERPROFILE\.ssh\id_ed25519
+     ```
+   - Windows (cmd):
+     ```cmd
+     ssh-keygen -t ed25519 -C "meu-usuario" -f %USERPROFILE%\.ssh\id_ed25519
+     ```
+
+2. Copie o conteúdo da chave pública (`id_ed25519.pub` ou `id_rsa.pub`) e defina em `terraform.tfvars`:
+   ```hcl
+   ssh_authorized_keys = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... usuario"
+   ```
+   Para múltiplas chaves, coloque-as separadas por `\n` em uma string multi-line:
+   ```hcl
+   ssh_authorized_keys = <<EOF
+   ssh-ed25519 AAAA... usuario1
+   ssh-ed25519 AAAA... usuario2
+   EOF
+   ```
+
+3. Aplique o Terraform.
+
+4. Descubra o IP público (output `instance_public_ip`). Exemplo de conexão (Ubuntu usa usuário `ubuntu`; Oracle Linux usa `opc`):
+   - Ubuntu:
+     ```bash
+     ssh -i ~/.ssh/id_ed25519 ubuntu@$(terraform output -raw instance_public_ip)
+     ```
+   - Oracle Linux:
+     ```bash
+     ssh -i ~/.ssh/id_ed25519 opc@$(terraform output -raw instance_public_ip)
+     ```
+   No Windows (cmd):
+   ```cmd
+   set IP=%CD%\tmp_ip.txt
+   terraform output -raw instance_public_ip > %IP%
+   for /f %%i in (%IP%) do ssh -i %USERPROFILE%\.ssh\id_ed25519 ubuntu@%%i
+   ```
+
+Se aparecer erro de permissão da chave privada no Windows, ajuste ACL ou gere chave dentro da pasta do usuário.
+
 ## Execução em CI (GitHub Actions)
 Workflow `.github/workflows/terraform.yml`:
 1. Materializa a chave privada em arquivo temporário.

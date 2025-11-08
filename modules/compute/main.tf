@@ -41,6 +41,10 @@ resource "oci_core_instance" "this" {
     assign_public_ip = true
   }
 
+  metadata = {
+    ssh_authorized_keys = var.ssh_authorized_keys
+  }
+
   lifecycle {
     precondition {
       condition     = local.effective_image_id != null && local.effective_image_id != ""
@@ -49,6 +53,10 @@ resource "oci_core_instance" "this" {
     precondition {
       condition     = var.boot_volume_size_gbs == null || var.boot_volume_size_gbs >= 50
       error_message = "boot_volume_size_gbs precisa ser >= 50 ou null para usar default da imagem."
+    }
+    precondition {
+      condition     = var.ssh_authorized_keys != ""
+      error_message = "Forneça pelo menos uma chave pública SSH em ssh_authorized_keys para acessar a instância."
     }
   }
 }

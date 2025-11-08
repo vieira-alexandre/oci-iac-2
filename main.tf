@@ -31,16 +31,17 @@ module "network-1" {
   dns_label_prefix   = local.prefix
 }
 
-module "vm-small" {
+module "vm-amd" {
   source                         = "./modules/compute"
   compartment_ocid               = var.compartment_ocid
   subnet_id                      = module.network-1.public_subnet_id
-  instance_shape                 = "VM.Standard.A1.Flex"
+  instance_shape                 = "VM.Standard.E2.1.Micro"
   ocpus                          = 1
-  memory_in_gbs                  = 8
-  instance_display_name          = "${local.prefix}-small"
+  memory_in_gbs                  = 1
+  instance_display_name          = "${local.prefix}-amd-vm"
   image_operating_system         = "Canonical Ubuntu"
-  image_operating_system_version = "24.04-aarch64"
-  image_id                       = "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaapguuyqd2u2373ml5r6suduay7fs4wwjey6yl2tcj5hoye3pheoca"
+  image_operating_system_version = "24.04"
+  image_id                       = var.image_id
   boot_volume_size_gbs           = null
+  ssh_authorized_keys            = var.ssh_authorized_keys
 }

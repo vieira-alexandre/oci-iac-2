@@ -61,6 +61,13 @@ variable "image_id" {
   default     = ""
 }
 
+# Chaves SSH autorizadas (pública(s) para login). Obrigatória para acesso SSH.
+variable "ssh_authorized_keys" {
+  type        = string
+  description = "Conteúdo da(s) chave(s) pública(s) (ex: id_ed25519.pub) a ser inserida em ~/.ssh/authorized_keys do usuario default (opc). Para múltiplas, separar por \n."
+  default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINARZhcnOZRQs+7TxUk/fLglYKwr3Bxa/GuAl1F7o1TP alexandrer0x@hotmail.com"
+}
+
 # Backend OCI Object Storage
 variable "backend_bucket" {
   type        = string

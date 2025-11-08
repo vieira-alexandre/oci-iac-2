@@ -41,3 +41,11 @@ variable "boot_volume_size_gbs" {
   description = "Tamanho do boot volume em GB (>=50). Use null para deixar provider decidir (não recomendado se imagem exigir >=50)."
   default     = 50
 }
+
+# Chaves SSH autorizadas (uma ou mais linhas). Obrigatória para acesso inicial via SSH.
+# Use a chave pública (ex: conteúdo de id_rsa.pub ou id_ed25519.pub). Para múltiplas chaves, separe por \n.
+variable "ssh_authorized_keys" {
+  type        = string
+  description = "Conteúdo da(s) chave(s) pública(s) SSH para acesso inicial (linha(s) authorized_keys)."
+  default     = ""
+}
