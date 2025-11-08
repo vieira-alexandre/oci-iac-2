@@ -31,16 +31,16 @@ module "network-1" {
   dns_label_prefix   = local.prefix
 }
 
-module "vm-bolao" {
+module "vm-small" {
   source                         = "./modules/compute"
   compartment_ocid               = var.compartment_ocid
   subnet_id                      = module.network-1.public_subnet_id
-  instance_shape                 = var.instance_shape
-  ocpus                          = var.instance_ocpus
-  memory_in_gbs                  = var.instance_memory_gbs
-  instance_display_name          = "${local.prefix}-webserver-bolao"
-  image_operating_system         = var.image_operating_system
-  image_operating_system_version = var.image_operating_system_version
-  image_id                       = var.image_id
+  instance_shape                 = "VM.Standard.A1.Flex"
+  ocpus                          = 1
+  memory_in_gbs                  = 8
+  instance_display_name          = "${local.prefix}-small"
+  image_operating_system         = "Canonical Ubuntu"
+  image_operating_system_version = "24.04-aarch64"
+  image_id                       = "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaapguuyqd2u2373ml5r6suduay7fs4wwjey6yl2tcj5hoye3pheoca"
   boot_volume_size_gbs           = null
 }
