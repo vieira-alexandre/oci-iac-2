@@ -13,32 +13,70 @@ modules/compute -> Instância flex com IP público
 
 ## Pré-requisitos
 1. Terraform >= 1.6
-2. Conta OCI e chave API configurada.
-3. Preencha um arquivo `terraform.tfvars` (não versionado) com os OCIDs e caminhos.
+2. Conta OCI e chave API (par de chaves) cadastrada no usuário.
+3. Preencha um arquivo `terraform.tfvars` (não versionado) com os OCIDs e parâmetros principais.
 
 Exemplo `terraform.tfvars`:
 ```
 tenancy_ocid = "ocid1.tenancy.oc1..xxxxx"
-user_ocid = "ocid1.user.oc1..xxxxx"
-fingerprint = "ab:cd:ef:gh:..."
-private_key_path = "~/.oci/oci_api_key.pem"
-region = "sa-saopaulo-1"
-compartment_ocid = "ocid1.compartment.oc1..xxxxx"
-project_prefix = "prod"
+user_ocid    = "ocid1.user.oc1..xxxxx"
+fingerprint  = "ab:cd:ef:gh:..."
+private_key  = <<EOF
+-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----
+EOF
+region            = "sa-saopaulo-1"
+compartment_ocid  = "ocid1.compartment.oc1..xxxxx"
+project_prefix    = "prod"
+backend_bucket    = "tfstate-meu-prod"          # bucket que armazenará o state
+backend_state_key = "terraform/prod/terraform.tfstate"  # caminho dentro do bucket
+# object_storage_namespace = "<opcional se workflow já descobrir>"
+```
+Se preferir, mantenha a chave privada fora do arquivo e injete via variável de ambiente `TF_VAR_private_key`.
+
+### Variáveis de instância (opcionais)
+```
+instance_shape                 = "VM.Standard.E2.1.Micro"
+instance_ocpus                 = 1
+instance_memory_gbs            = 8
+image_operating_system         = "Oracle Linux"
+image_operating_system_version = "9"
 ```
 
-Se quiser ajustar tamanho/memória da instância:
+## Backend (State remoto no OCI Object Storage)
+Agora usando backend nativo `oci` (sem S3 compat). No `main.tf`:
 ```
-instance_shape = "VM.Standard.E2.1.Micro"
-instance_ocpus = 1
-instance_memory_gbs = 8
+terraform {
+  backend "oci" {}
+}
 ```
+Durante o `terraform init`, parâmetros são passados via `-backend-config`:
+- bucket: nome do bucket
+- namespace: namespace do tenant (se não fornecido, o workflow obtém via CLI)
+- region: região OCI
+- tenancy_ocid, user_ocid, fingerprint, private_key (ou private_key_path)
+- key: caminho relativo dentro do bucket para o state
+
+Exemplo manual (Linux/macOS shell):
+```
+terraform init \
+  -backend-config="bucket=$TF_VAR_backend_bucket" \
+  -backend-config="namespace=$(oci os ns get --query 'data' --raw-output)" \
+  -backend-config="region=$TF_VAR_region" \
+  -backend-config="tenancy_ocid=$TF_VAR_tenancy_ocid" \
+  -backend-config="user_ocid=$TF_VAR_user_ocid" \
+  -backend-config="fingerprint=$TF_VAR_fingerprint" \
+  -backend-config="private_key=$TF_VAR_private_key" \
+  -backend-config="key=$TF_VAR_backend_state_key"
+```
+No Windows (cmd) substitua `$VARS` por `%VARS%`.
 
 ## Uso
 ```
 terraform init
-terraform plan -out plan.tfplan
-terraform apply plan.tfplan
+terraform plan -out tfplan
+terraform apply tfplan
 ```
 Para destruir:
 ```
@@ -49,73 +87,61 @@ terraform destroy
 Cria VCN, Internet Gateway, Route Table pública, Security List com portas 22/80/443 e uma subnet pública.
 
 ## Módulo Compute
-Seleciona a última imagem do SO (Oracle Linux por padrão) e cria uma VM Flex com IP público.
+Seleciona a última imagem do SO (Oracle Linux por padrão) e cria uma VM Flex com IP público. (Comentado por padrão no `main.tf`; descomente para criar.)
 
 ## Execução em CI (GitHub Actions)
-Para rodar `terraform plan` e `apply` no GitHub Actions sem commit da chave privada:
+Workflow `.github/workflows/terraform.yml`:
+1. Materializa a chave privada em arquivo temporário.
+2. Obtém o namespace do Object Storage se não fornecido.
+3. Garante a existência do bucket (`oci os bucket get/create`).
+4. Executa `terraform init` com backend nativo `oci`.
+5. Roda validate/plan e publica artefatos; em branch `main`, aplica usando o plano salvo.
 
-1. Cadastre os seguintes Secrets no repositório:
-   - `OCI_TENANCY_OCID`
-   - `OCI_USER_OCID`
-   - `OCI_FINGERPRINT` (fingerprint da chave pública cadastrada na Console OCI)
-   - `OCI_PRIVATE_KEY` (conteúdo PEM completo da chave privada, incluindo linhas BEGIN/END)
-   - `OCI_REGION`
-   - `OCI_COMPARTMENT_OCID`
-   - `PROJECT_PREFIX` (ex: prod)
-   - `VCN_CIDR` (ex: 10.0.0.0/16)
-   - `PUBLIC_SUBNET_CIDR` (ex: 10.0.1.0/24)
-   - `INSTANCE_SHAPE` (ex: VM.Standard.E2.1.Micro)
-   - `INSTANCE_OCPUS` (ex: 1)
-   - `INSTANCE_MEMORY_GBS` (ex: 8)
-   - `IMAGE_OPERATING_SYSTEM` (ex: Oracle Linux)
-   - `IMAGE_OPERATING_SYSTEM_VERSION` (ex: 9)
-   - `IMAGE_ID` (opcional; deixar vazio para seleção automática)
+Secrets necessários:
+- `OCI_TENANCY_OCID`
+- `OCI_USER_OCID`
+- `OCI_FINGERPRINT`
+- `OCI_PRIVATE_KEY` (conteúdo PEM)
+- `OCI_COMPARTMENT_OCID`
 
-2. Use o workflow `.github/workflows/terraform.yml` já incluído. Ele faz:
-   - Gera arquivo temporário com a chave privada: `echo "${{ secrets.OCI_PRIVATE_KEY }}" > $RUNNER_TEMP/oci_api_key.pem`
-   - Exporta `TF_VAR_private_key_path` apontando para esse arquivo efêmero.
-   - Executa init/validate/plan e publica artefato do plano.
+Vars (Repository/Environment) opcionais:
+- `OCI_REGION`
+- `TF_BACKEND_BUCKET`
+- `TF_BACKEND_STATE_KEY`
+- `TF_BACKEND_BUCKET_NAMESPACE` (opcional; se vazio o workflow descobre)
 
-3. Segurança:
-   - Nunca commit o arquivo PEM.
-   - Garanta que o secret `OCI_PRIVATE_KEY` não contém espaços extras; copie exatamente do seu arquivo local.
-   - Considere habilitar ambiente protegido para o job `apply` (requere aprovação).
-
-4. Caso queira apenas validar em PR sem criar recursos, remova o job `apply` ou adicione condicional `if: github.event_name == 'pull_request'` para pular.
+### Segurança
+- Chave privada nunca é persistida além do arquivo temporário no runner (removido ao final).
+- Não commit nenhum material sensível.
 
 ## Troubleshooting
+### Erro de autenticação backend
+Verifique fingerprint, usuario e a chave privada.
 
-### Erro: can not create client, bad configuration: did not find a proper configuration for private key
-Esse erro geralmente significa que o `private_key_path` apontado no seu `terraform.tfvars` não existe ou não é legível.
+### Erro: bucket não encontrado / namespace vazio
+Confirme permissões e que `oci os ns get` retorna valor.
 
-Checklist:
-1. Verifique se o arquivo PEM existe: `secrets/oci_api_key.pem` (ou caminho absoluto).
-2. No Windows, use barra normal `/` ou escape `\\` se usar backslashes. Ex: `C:/Users/alexa/projects/oci-iac/secrets/oci_api_key.pem`.
-3. Não use interpolação (`${path.module}`) dentro de `terraform.tfvars` – Terraform não expande isso em arquivos `.tfvars`. Use um caminho literal.
-4. Confirme permissões do arquivo (no Linux/macOS: `chmod 600`). No Windows, apenas garanta que seu usuário consegue ler.
-5. Fingerprint deve corresponder à chave pública cadastrada na OCI: compare o conteúdo de `secrets/oci_api_key_public.pem` com o que foi adicionado na Consola.
+### Migrando de S3 compat para backend nativo
+Se antes usava S3 compat:
+1. Faça backup do state.
+2. Rode `terraform init -migrate-state` com o novo backend `oci`.
 
-Para testar rapidamente:
+Exemplo:
 ```
-terraform console
-> fileexists("secrets/oci_api_key.pem")
+terraform init -migrate-state \
+  -backend-config="bucket=..." \
+  -backend-config="namespace=..." \
+  -backend-config="region=..." \
+  -backend-config="tenancy_ocid=..." \
+  -backend-config="user_ocid=..." \
+  -backend-config="fingerprint=..." \
+  -backend-config="private_key=..." \
+  -backend-config="key=..."
 ```
-Se retornar `false`, ajuste o caminho.
-
-Se você preferir variáveis de ambiente, exporte (PowerShell):
-```
-$env:TF_VAR_private_key_path = "C:/Users/alexa/projects/oci-iac/secrets/oci_api_key.pem"
-```
-Ou em CMD:
-```
-set TF_VAR_private_key_path=C:/Users/alexa/projects/oci-iac/secrets/oci_api_key.pem
-```
-
-### Erro de validação do private_key_path
-Adicionamos uma validação: Terraform falhará cedo se o caminho não existir. Corrija antes de executar `plan`.
 
 ## Próximos Passos / Melhorias
 - Adicionar módulo de armazenamento (Block Volume)
 - Adicionar NSG ao invés de Security List genérica
 - Gerenciar chaves SSH para acesso seguro
 - Output de OCID da imagem utilizada
+- Avaliar lock remoto (não suportado nativamente no backend OCI; considerar alternativa)
