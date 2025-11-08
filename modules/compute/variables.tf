@@ -34,3 +34,9 @@ variable "image_id" {
   type    = string
   default = ""
 }
+
+variable "boot_volume_size_gbs" {
+  type        = number
+  description = "Tamanho do boot volume em GB (>=50). Se omitido, usa o tamanho default da imagem."
+  default     = 0
+}

@@ -14,6 +14,7 @@ data "oci_core_images" "os" {
 locals {
   effective_image_id = var.image_id != "" ? var.image_id : (length(data.oci_core_images.os.images) > 0 ? data.oci_core_images.os.images[0].id : null)
   is_flex_shape      = can(regex(".*Flex$", var.instance_shape))
+  boot_size_override = var.boot_volume_size_gbs > 0 ? var.boot_volume_size_gbs : null
 }
 
 resource "oci_core_instance" "this" {
@@ -21,11 +22,14 @@ resource "oci_core_instance" "this" {
   compartment_id      = var.compartment_ocid
   display_name        = var.instance_display_name
   shape               = var.instance_shape
-  subnet_id           = var.subnet_id
 
   source_details {
     source_type = "image"
-    source_id   = local.effective_image_id // changed from image_id per provider schema
+    source_id   = local.effective_image_id
+    dynamic "boot_volume_size_in_gbs" {
+      for_each = local.boot_size_override != null ? [local.boot_size_override] : []
+      content  = boot_volume_size_in_gbs.value
+    }
   }
 
   dynamic "shape_config" {
@@ -45,6 +49,10 @@ resource "oci_core_instance" "this" {
     precondition {
       condition     = local.effective_image_id != null && local.effective_image_id != ""
       error_message = "No image ID resolved. Provide variable image_id or ensure data source returns at least one image."
+    }
+    precondition {
+      condition     = var.boot_volume_size_gbs == 0 || var.boot_volume_size_gbs >= 50
+      error_message = "boot_volume_size_gbs precisa ser >= 50 ou 0 para usar default da imagem."
     }
   }
 }
