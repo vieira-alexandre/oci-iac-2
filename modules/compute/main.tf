@@ -21,11 +21,11 @@ resource "oci_core_instance" "this" {
   compartment_id      = var.compartment_ocid
   display_name        = var.instance_display_name
   shape               = var.instance_shape
-  subnet_id           = var.subnet_id
 
   source_details {
-    source_type = "image"
-    source_id   = local.effective_image_id // changed from image_id per provider schema
+    source_type             = "image"
+    source_id               = local.effective_image_id
+    boot_volume_size_in_gbs = var.boot_volume_size_gbs == null ? null : var.boot_volume_size_gbs
   }
 
   dynamic "shape_config" {
@@ -45,6 +45,10 @@ resource "oci_core_instance" "this" {
     precondition {
       condition     = local.effective_image_id != null && local.effective_image_id != ""
       error_message = "No image ID resolved. Provide variable image_id or ensure data source returns at least one image."
+    }
+    precondition {
+      condition     = var.boot_volume_size_gbs == null || var.boot_volume_size_gbs >= 50
+      error_message = "boot_volume_size_gbs precisa ser >= 50 ou null para usar default da imagem."
     }
   }
 }
