@@ -7,7 +7,8 @@ data "oci_core_images" "os" {
   operating_system         = var.image_operating_system
   operating_system_version = var.image_operating_system_version
   shape                    = var.instance_shape
-  # Observação: O provedor não garante ordenação; caso precise imagem específica use filter ou passe image_id diretamente via variável.
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
 }
 
 locals {
