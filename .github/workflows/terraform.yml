@@ -31,32 +31,22 @@ jobs:
     name: terraform plan
     runs-on: ubuntu-latest
     outputs:
-      plan_path: ${{ steps.store-plan.outputs.plan_path }}
-      backend_bucket: ${{ steps.export-backend-values.outputs.backend_bucket }}
-      backend_state_key: ${{ steps.export-backend-values.outputs.backend_state_key }}
-      object_storage_namespace: ${{ steps.export-namespace.outputs.object_storage_namespace }}
+      backend_bucket: ${{ steps.export-backend.outputs.backend_bucket }}
+      backend_state_key: ${{ steps.export-backend.outputs.backend_state_key }}
+      object_storage_namespace: ${{ steps.export-backend.outputs.object_storage_namespace }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Definir defaults para variáveis não sensíveis (se ausentes)
+      - name: Definir defaults mínimos (backend) se ausentes
         run: |
           set -e
-          # Usar if explícito para evitar qualquer interação estranha com -e.
-          if [ -z "${TF_VAR_project_prefix:-}" ]; then echo "TF_VAR_project_prefix=prod" >> $GITHUB_ENV; fi
-          if [ -z "${TF_VAR_vcn_cidr:-}" ]; then echo "TF_VAR_vcn_cidr=10.0.0.0/16" >> $GITHUB_ENV; fi
-          if [ -z "${TF_VAR_public_subnet_cidr:-}" ]; then echo "TF_VAR_public_subnet_cidr=10.0.1.0/24" >> $GITHUB_ENV; fi
-          if [ -z "${TF_VAR_instance_shape:-}" ]; then echo "TF_VAR_instance_shape=VM.Standard.E2.1.Micro" >> $GITHUB_ENV; fi
-          if [ -z "${TF_VAR_instance_ocpus:-}" ]; then echo "TF_VAR_instance_ocpus=1" >> $GITHUB_ENV; fi
-          if [ -z "${TF_VAR_instance_memory_gbs:-}" ]; then echo "TF_VAR_instance_memory_gbs=8" >> $GITHUB_ENV; fi
-          if [ -z "${TF_VAR_image_operating_system:-}" ]; then echo "TF_VAR_image_operating_system=Oracle Linux" >> $GITHUB_ENV; fi
-          if [ -z "${TF_VAR_image_operating_system_version:-}" ]; then echo "TF_VAR_image_operating_system_version=9" >> $GITHUB_ENV; fi
-          REPO_SLUG="${GITHUB_REPOSITORY##*/}"
+          REPO_SLUG="${GITHUB_REPOSITORY##*/}" || true
           if [ -z "$REPO_SLUG" ]; then REPO_SLUG="repo"; fi
           SANITIZED=$(printf "%s" "$REPO_SLUG" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-') || true
           if [ -z "${TF_VAR_backend_bucket:-}" ]; then echo "TF_VAR_backend_bucket=tfstate-${SANITIZED}" >> $GITHUB_ENV; fi
           if [ -z "${TF_VAR_backend_state_key:-}" ]; then echo "TF_VAR_backend_state_key=terraform/${SANITIZED}/terraform.tfstate" >> $GITHUB_ENV; fi
-          echo "Defaults aplicados com sucesso"
+          echo "Defaults backend aplicados (se necessário)"
 
       - name: Verificar variáveis obrigatórias de backend
         run: |
@@ -64,21 +54,16 @@ jobs:
           for v in TF_VAR_backend_bucket TF_VAR_backend_state_key TF_VAR_tenancy_ocid TF_VAR_user_ocid TF_VAR_fingerprint TF_VAR_private_key TF_VAR_region; do
             if [ -z "${!v}" ]; then echo "Variável $v ausente"; missing="1"; fi
           done
-          if [ -n "$missing" ]; then exit 1; else echo "Variáveis essenciais presentes"; fi
+          [ -z "$missing" ] && echo "Variáveis essenciais presentes" || exit 1
 
       - name: Materializar chave privada para OCI CLI
         run: |
-          echo "Salvando chave privada para OCI CLI"
           echo "${TF_VAR_private_key}" > $RUNNER_TEMP/oci_api_key.pem
           chmod 600 $RUNNER_TEMP/oci_api_key.pem
 
-      - name: Instalar OCI CLI
+      - name: Instalar e configurar OCI CLI (para namespace e bucket)
         run: |
           pip install --quiet --upgrade oci-cli
-          oci --version
-
-      - name: Configurar OCI CLI
-        run: |
           mkdir -p ~/.oci
           cat > ~/.oci/config <<EOF
           [DEFAULT]
@@ -89,44 +74,31 @@ jobs:
           key_file=$RUNNER_TEMP/oci_api_key.pem
           EOF
           chmod 600 ~/.oci/config
+          oci --version
 
-      - name: Obter namespace Object Storage (se não fornecido)
-        id: namespace
+      - name: Obter namespace (se não fornecido) e garantir bucket
         run: |
           if [ -n "${TF_VAR_object_storage_namespace}" ]; then
-            echo "Namespace já fornecido: ${TF_VAR_object_storage_namespace}"
             NS="${TF_VAR_object_storage_namespace}"
+            echo "Namespace já fornecido: $NS"
           else
-            echo "Consultando namespace via OCI CLI..."
             NS=$(oci os ns get --query 'data' --raw-output)
             echo "TF_VAR_object_storage_namespace=${NS}" >> $GITHUB_ENV
+            echo "Namespace obtido: $NS"
           fi
-          echo "Namespace final: $NS"
-          echo "object_storage_namespace=$NS" >> $GITHUB_OUTPUT
-
-      - name: Garantir bucket existe (idempotente)
-        run: |
-          BUCKET="${TF_VAR_backend_bucket}"
-          COMPARTMENT="${TF_VAR_compartment_ocid}"
-          NS="${TF_VAR_object_storage_namespace}"
-          if [ -z "$NS" ]; then echo "Namespace vazio"; exit 1; fi
-          echo "Checando bucket $BUCKET"
-          if oci os bucket get --namespace-name "$NS" --bucket-name "$BUCKET" >/dev/null 2>&1; then
-            echo "Bucket já existe"
+          BUCKET="${TF_VAR_backend_bucket}"; COMPARTMENT="${TF_VAR_compartment_ocid}"; NS_FINAL="${NS}";
+          if oci os bucket get --namespace-name "$NS_FINAL" --bucket-name "$BUCKET" >/dev/null 2>&1; then
+            echo "Bucket $BUCKET já existe"
           else
             echo "Criando bucket $BUCKET"
-            oci os bucket create --name "$BUCKET" --compartment-id "$COMPARTMENT" --public-access-type NoPublicAccess --storage-tier Standard || { echo "Falha ao criar bucket"; exit 1; }
+            oci os bucket create --name "$BUCKET" --compartment-id "$COMPARTMENT" --public-access-type NoPublicAccess --storage-tier Standard
           fi
 
-      - name: Exportar valores backend
-        id: export-backend-values
+      - name: Exportar outputs backend e namespace
+        id: export-backend
         run: |
           echo "backend_bucket=${TF_VAR_backend_bucket}" >> $GITHUB_OUTPUT
           echo "backend_state_key=${TF_VAR_backend_state_key}" >> $GITHUB_OUTPUT
-
-      - name: Exportar namespace
-        id: export-namespace
-        run: |
           echo "object_storage_namespace=${TF_VAR_object_storage_namespace}" >> $GITHUB_OUTPUT
 
       - name: Setup Terraform
@@ -162,23 +134,17 @@ jobs:
         run: terraform fmt -check -recursive || true
 
       - name: Terraform Plan
-        id: plan
         run: |
           set -o pipefail
           terraform plan -no-color -out=tfplan | tee plan.log
 
-      - name: Armazenar plano como artefato
-        id: store-plan
-        run: |
-          echo "plan_path=tfplan" >> $GITHUB_OUTPUT
-
       - name: Upload artefatos (plan + logs)
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-plan
-          path: |
-            tfplan
-            plan.log
+            name: terraform-plan
+            path: |
+              tfplan
+              plan.log
 
       - name: Resumo do PLAN
         run: |
@@ -216,9 +182,9 @@ jobs:
 
       - name: Definir variáveis de backend do job plan
         run: |
-          if [ -n "${{ needs.plan.outputs.backend_bucket }}" ]; then echo "TF_VAR_backend_bucket=${{ needs.plan.outputs.backend_bucket }}" >> $GITHUB_ENV; fi
-          if [ -n "${{ needs.plan.outputs.backend_state_key }}" ]; then echo "TF_VAR_backend_state_key=${{ needs.plan.outputs.backend_state_key }}" >> $GITHUB_ENV; fi
-          if [ -n "${{ needs.plan.outputs.object_storage_namespace }}" ]; then echo "TF_VAR_object_storage_namespace=${{ needs.plan.outputs.object_storage_namespace }}" >> $GITHUB_ENV; else echo "Namespace não encontrado"; exit 1; fi
+          echo "TF_VAR_backend_bucket=${{ needs.plan.outputs.backend_bucket }}" >> $GITHUB_ENV
+          echo "TF_VAR_backend_state_key=${{ needs.plan.outputs.backend_state_key }}" >> $GITHUB_ENV
+          echo "TF_VAR_object_storage_namespace=${{ needs.plan.outputs.object_storage_namespace }}" >> $GITHUB_ENV
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
