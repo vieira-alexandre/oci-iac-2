@@ -149,7 +149,8 @@ jobs:
             -backend-config="skip_credentials_validation=true" \
             -backend-config="skip_region_validation=true" \
             -backend-config="skip_requesting_account_id=true" \
-            -backend-config="force_path_style=true" \
+            -backend-config="skip_metadata_api_check=true" \
+            -backend-config="use_path_style=true" \
             -backend-config="encrypt=true"
 
       - name: Terraform Validate
@@ -272,7 +273,8 @@ jobs:
             -backend-config="skip_credentials_validation=true" \
             -backend-config="skip_region_validation=true" \
             -backend-config="skip_requesting_account_id=true" \
-            -backend-config="force_path_style=true" \
+            -backend-config="skip_metadata_api_check=true" \
+            -backend-config="use_path_style=true" \
             -backend-config="encrypt=true"
           terraform apply -no-color -input=false -auto-approve tfplan | tee apply.log
 
