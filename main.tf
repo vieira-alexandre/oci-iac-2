@@ -23,7 +23,7 @@ locals {
   prefix = var.project_prefix
 }
 
-module "network" {
+module "network-1" {
   source             = "./modules/network"
   compartment_ocid   = var.compartment_ocid
   vcn_cidr           = var.vcn_cidr
@@ -31,10 +31,10 @@ module "network" {
   dns_label_prefix   = local.prefix
 }
 
-module "compute" {
+module "vm-bolao" {
   source                         = "./modules/compute"
   compartment_ocid               = var.compartment_ocid
-  subnet_id                      = module.network.public_subnet_id
+  subnet_id                      = module.network-1.public_subnet_id
   instance_shape                 = var.instance_shape
   ocpus                          = var.instance_ocpus
   memory_in_gbs                  = var.instance_memory_gbs
@@ -42,4 +42,5 @@ module "compute" {
   image_operating_system         = var.image_operating_system
   image_operating_system_version = var.image_operating_system_version
   image_id                       = var.image_id
+  boot_volume_size_gbs           = null
 }
