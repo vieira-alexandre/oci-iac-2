@@ -49,11 +49,16 @@ variable "instance_memory_gbs" {
 }
 variable "image_operating_system" {
   type    = string
-  default = "Oracle Linux"
+  default = "Canonical Ubuntu"
 }
 variable "image_operating_system_version" {
   type    = string
-  default = "9"
+  default = "24.04"
+}
+variable "image_id" {
+  type        = string
+  description = "OCID explícito da imagem para a instância (sobrepõe busca por operating_system/version)."
+  default     = ""
 }
 
 # Backend OCI Object Storage

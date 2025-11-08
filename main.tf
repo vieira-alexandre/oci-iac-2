@@ -31,14 +31,15 @@ module "network" {
   dns_label_prefix   = local.prefix
 }
 
-# module "compute" {
-#   source                         = "./modules/compute"
-#   compartment_ocid               = var.compartment_ocid
-#   subnet_id                      = module.network.public_subnet_id
-#   instance_shape                 = var.instance_shape
-#   ocpus                          = var.instance_ocpus
-#   memory_in_gbs                  = var.instance_memory_gbs
-#   instance_display_name          = "${local.prefix}-vm01"
-#   image_operating_system         = var.image_operating_system
-#   image_operating_system_version = var.image_operating_system_version
-# }
+module "compute" {
+  source                         = "./modules/compute"
+  compartment_ocid               = var.compartment_ocid
+  subnet_id                      = module.network.public_subnet_id
+  instance_shape                 = var.instance_shape
+  ocpus                          = var.instance_ocpus
+  memory_in_gbs                  = var.instance_memory_gbs
+  instance_display_name          = "${local.prefix}-webserver-bolao"
+  image_operating_system         = var.image_operating_system
+  image_operating_system_version = var.image_operating_system_version
+  image_id                       = var.image_id
+}

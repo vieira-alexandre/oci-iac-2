@@ -12,7 +12,6 @@ public_subnet_cidr = "10.0.1.0/24"
 instance_shape = "VM.Standard.E2.1.Micro"
 instance_ocpus = 1
 instance_memory_gbs = 8
-image_operating_system = "Oracle Linux"
-image_operating_system_version = "9"
-# image_id = "" # optionally override a specific image OCID here
-
+image_operating_system = "Canonical Ubuntu"
+image_operating_system_version = "24.04"
+# image_id = "" # opcional: sobrepor uma imagem específica Ubuntu se desejar
