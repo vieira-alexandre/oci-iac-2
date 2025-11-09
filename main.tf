@@ -53,7 +53,7 @@ module "vm-arm" {
   instance_shape                 = "VM.Standard.A1.Flex"
   ocpus                          = 4
   memory_in_gbs                  = 24
-  instance_display_name          = "${local.prefix}-amd-vm"
+  instance_display_name          = "${local.prefix}-arm-vm"
   image_operating_system         = "Canonical Ubuntu"
   image_operating_system_version = "24.04"
   image_id                       = "ocid1.image.oc1.sa-santiago-1.aaaaaaaa5zltrocumh7l4cmea6hghh2suujtuaq3ctmgfj77vqydpqwlwnrq"
