@@ -46,7 +46,7 @@ while true; do
     code=$?
     END_TIME=$(date +%s)
     ELAPSED=$(( END_TIME - START_TIME ))
-    echo "Falhou (exit code=$code). Tentativa $attempt levou até agora $(format_elapsed $ELAPSED). Nova tentativa em ${DELAY_SECONDS}s..."
+    echo "Tentativa $attempt falhou com (exit code=$code). Tempo decorrido até agora $(format_elapsed $ELAPSED). Nova tentativa em ${DELAY_SECONDS}s..."
     sleep "$DELAY_SECONDS"
   fi
 done
