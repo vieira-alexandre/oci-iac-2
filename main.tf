@@ -59,4 +59,20 @@ module "vm-amd-db" {
   image_id                       = var.image_id
   boot_volume_size_gbs           = null
   ssh_authorized_keys            = var.ssh_authorized_keys
+  network_security_group_ids     = [module.network-1.db_nsg_id]
+}
+
+resource "oci_core_network_security_group_security_rule" "db_mysql_ingress" {
+  network_security_group_id = module.network-1.db_nsg_id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+  source_type               = "CIDR_BLOCK"
+  source                    = "${module.vm-amd.private_ip}/32"
+  description               = "Permitir MySQL apenas da vm-amd"
+  tcp_options {
+    destination_port_range {
+      min = 3306
+      max = 3306
+    }
+  }
 }
