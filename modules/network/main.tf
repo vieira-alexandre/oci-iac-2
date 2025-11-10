@@ -60,6 +60,13 @@ resource "oci_core_security_list" "public" {
     }
   }
 
+  ingress_security_rules {
+    protocol     = "all"
+    source       = "10.0.1.0/24"
+    source_type  = "CIDR_BLOCK"
+    description  = "Allow all traffic from 10.0.1.0/24"
+  }
+
   egress_security_rules {
     protocol    = "all"
     destination = "0.0.0.0/0"
