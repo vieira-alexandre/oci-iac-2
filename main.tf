@@ -44,6 +44,7 @@ module "vm-amd" {
   image_id                       = var.image_id
   boot_volume_size_gbs           = null
   ssh_authorized_keys            = var.ssh_authorized_keys
+  network_security_group_ids     = [module.network-1.db_nsg_id]
 }
 
 module "vm-amd-db" {
