@@ -6,10 +6,10 @@ output "instance_public_ip" { value = module.vm-amd.public_ip }
 output "instance_image_id" { value = module.vm-amd.effective_image_id }
 output "instance_boot_volume_size_gbs" { value = module.vm-amd.boot_volume_size_gbs }
 
-# output "arm_instance_id" { value = module.vm-arm.instance_id }
-# output "arm_instance_public_ip" { value = module.vm-arm.public_ip }
-# output "arm_instance_image_id" { value = module.vm-arm.effective_image_id }
-# output "arm_instance_boot_volume_size_gbs" { value = module.vm-arm.boot_volume_size_gbs }
+output "arm_instance_id" { value = module.vm-amd-db.instance_id }
+output "arm_instance_public_ip" { value = module.vm-amd-db.public_ip }
+output "arm_instance_image_id" { value = module.vm-amd-db.effective_image_id }
+output "arm_instance_boot_volume_size_gbs" { value = module.vm-amd-db.boot_volume_size_gbs }
 
 output "backend_bucket" {
   value       = var.backend_bucket
