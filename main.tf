@@ -46,17 +46,17 @@ module "vm-amd" {
   ssh_authorized_keys            = var.ssh_authorized_keys
 }
 
-module "vm-arm" {
-  source                         = "./modules/compute"
-  compartment_ocid               = var.compartment_ocid
-  subnet_id                      = module.network-1.public_subnet_id
-  instance_shape                 = "VM.Standard.E2.1.Micro"
-  ocpus                          = 1
-  memory_in_gbs                  = 1
-  instance_display_name          = "${local.prefix}-amd-db-vm"
-  image_operating_system         = "Canonical Ubuntu"
-  image_operating_system_version = "24.04"
-  image_id                       = var.image_id
-  boot_volume_size_gbs           = null
-  ssh_authorized_keys            = var.ssh_authorized_keys
-}
+# module "vm-arm" {
+#   source                         = "./modules/compute"
+#   compartment_ocid               = var.compartment_ocid
+#   subnet_id                      = module.network-1.public_subnet_id
+#   instance_shape                 = "VM.Standard.E2.1.Micro"
+#   ocpus                          = 1
+#   memory_in_gbs                  = 1
+#   instance_display_name          = "${local.prefix}-amd-db-vm"
+#   image_operating_system         = "Canonical Ubuntu"
+#   image_operating_system_version = "24.04"
+#   image_id                       = var.image_id
+#   boot_volume_size_gbs           = null
+#   ssh_authorized_keys            = var.ssh_authorized_keys
+# }
