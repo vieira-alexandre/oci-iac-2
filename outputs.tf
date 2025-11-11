@@ -1,5 +1,5 @@
-output "nextcloud_vcn_id" { value = module.nextcloud-network.vcn_id }
-output "nextcloud_public_subnet_id" { value = module.nextcloud-network.public_subnet_id }
+# output "nextcloud_vcn_id" { value = module.nextcloud-network.vcn_id }
+# output "nextcloud_public_subnet_id" { value = module.nextcloud-network.public_subnet_id }
 
 # output "instance_id" { value = module.vm-amd.instance_id }
 # output "instance_public_ip" { value = module.vm-amd.public_ip }
