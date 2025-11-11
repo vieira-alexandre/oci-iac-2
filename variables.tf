@@ -21,7 +21,7 @@ variable "compartment_ocid" {
 }
 variable "project_prefix" {
   type    = string
-  default = "prod"
+  default = "nextcloud"
 }
 
 # Network variables

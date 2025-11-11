@@ -22,13 +22,13 @@ locals {
   prefix = var.project_prefix
 }
 
-# module "nextcloud-network" {
-#   source             = "./modules/network"
-#   compartment_ocid   = var.compartment_ocid
-#   vcn_cidr           = var.vcn_cidr
-#   public_subnet_cidr = var.public_subnet_cidr
-#   dns_label_prefix   = local.prefix
-# }
+module "nextcloud-network" {
+  source             = "./modules/network"
+  compartment_ocid   = var.compartment_ocid
+  vcn_cidr           = var.vcn_cidr
+  public_subnet_cidr = var.public_subnet_cidr
+  dns_label_prefix   = local.prefix
+}
 
 # module "vm-amd" {
 #   source                         = "./modules/compute"
