@@ -49,3 +49,9 @@ variable "ssh_authorized_keys" {
   description = "Conteúdo da(s) chave(s) pública(s) SSH para acesso inicial (linha(s) authorized_keys)."
   default     = ""
 }
+
+variable "network_security_group_ids" {
+  type        = list(string)
+  description = "Lista de NSG IDs a associar à VNIC primaria da instância."
+  default     = []
+}

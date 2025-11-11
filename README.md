@@ -152,12 +152,25 @@ Secrets necessários:
 - `OCI_FINGERPRINT`
 - `OCI_PRIVATE_KEY` (conteúdo PEM)
 - `OCI_COMPARTMENT_OCID`
-
-Vars (Repository/Environment) opcionais:
 - `OCI_REGION`
 - `TF_BACKEND_BUCKET`
 - `TF_BACKEND_STATE_KEY`
+- `SSH_AUTHORIZED_KEYS` (conteúdo da(s) chave(s) pública(s). Para múltiplas, separar por linha.)
+
+Vars (Repository/Environment) opcionais:
 - `TF_BACKEND_BUCKET_NAMESPACE` (opcional; se vazio o workflow descobre)
+
+### Injetando ssh_authorized_keys no GitHub Actions
+O Terraform consome qualquer variável com prefixo `TF_VAR_`. No workflow definimos:
+```
+TF_VAR_ssh_authorized_keys: ${{ secrets.SSH_AUTHORIZED_KEYS }}
+```
+Portanto, basta criar o secret `SSH_AUTHORIZED_KEYS` no repositório com uma ou mais linhas de chaves públicas. Exemplo de valor do secret:
+```
+ssh-ed25519 AAAA... usuario1
+ssh-ed25519 AAAA... usuario2
+```
+Não inclua espaços extras ou linhas em branco no início/fim.
 
 ### Segurança
 - Chave privada nunca é persistida além do arquivo temporário no runner (removido ao final).

@@ -77,3 +77,20 @@ resource "oci_core_subnet" "public" {
   security_list_ids          = [oci_core_security_list.public.id]
   prohibit_public_ip_on_vnic = false
 }
+
+# # Network Security Group dedicado para a instancia de banco (vm-amd-db)
+# resource "oci_core_network_security_group" "db" {
+#   compartment_id = var.compartment_ocid
+#   vcn_id         = oci_core_vcn.this.id
+#   display_name   = "${var.dns_label_prefix}-db-nsg"
+# }
+#
+# # Regra de saída irrestrita (para atualizações, etc.)
+# resource "oci_core_network_security_group_security_rule" "db_egress_all" {
+#   network_security_group_id = oci_core_network_security_group.db.id
+#   direction                 = "EGRESS"
+#   protocol                  = "all"
+#   destination               = "0.0.0.0/0"
+#   destination_type          = "CIDR_BLOCK"
+#   description               = "Saída irrestrita"
+# }
