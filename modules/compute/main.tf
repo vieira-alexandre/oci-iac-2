@@ -70,3 +70,32 @@ data "oci_core_vnic_attachments" "instance_vnics" {
 data "oci_core_vnic" "primary" {
   vnic_id = data.oci_core_vnic_attachments.instance_vnics.vnic_attachments[0].vnic_id
 }
+
+resource "oci_core_volume" "data" {
+  count               = var.data_volume_size_gbs == null || var.data_volume_size_gbs == 0 ? 0 : 1
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  compartment_id      = var.compartment_ocid
+  display_name        = coalesce(var.data_volume_display_name, "${var.instance_display_name}-data")
+  size_in_gbs         = var.data_volume_size_gbs
+  lifecycle {
+    precondition {
+      condition     = var.data_volume_size_gbs == null || var.data_volume_size_gbs == 0 || var.data_volume_size_gbs >= 50
+      error_message = "data_volume_size_gbs deve ser null, 0 ou >= 50."
+    }
+  }
+}
+
+resource "oci_core_volume_attachment" "data_attach" {
+  count           = length(oci_core_volume.data) == 1 ? 1 : 0
+  instance_id     = oci_core_instance.this.id
+  volume_id       = oci_core_volume.data[0].id
+  attachment_type = var.data_volume_attachment_type
+  # Para iscsi, para evitar race conditions em inicialização ao usar cloud-init, pode-se adicionar opcionalmente espera.
+}
+
+resource "oci_core_volume_backup_policy_assignment" "data_policy" {
+  count                 = var.data_volume_backup_policy_id != null && var.data_volume_backup_policy_id != "" && length(oci_core_volume.data) == 1 ? 1 : 0
+  asset_id              = oci_core_volume.data[0].id
+  policy_id             = var.data_volume_backup_policy_id
+  # Não é obrigatório; criado apenas se ID fornecido.
+}

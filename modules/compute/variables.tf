@@ -55,3 +55,35 @@ variable "network_security_group_ids" {
   description = "Lista de NSG IDs a associar à VNIC primaria da instância."
   default     = []
 }
+
+variable "data_volume_size_gbs" {
+  type        = number
+  description = "Tamanho do volume de dados adicional em GB. Use null ou 0 para não criar."
+  default     = null
+  validation {
+    condition     = var.data_volume_size_gbs == null || var.data_volume_size_gbs == 0 || var.data_volume_size_gbs >= 50
+    error_message = "data_volume_size_gbs deve ser null, 0 ou >= 50."
+  }
+}
+
+variable "data_volume_display_name" {
+  type        = string
+  description = "Display name do volume de dados. Default: <instance_display_name>-data se não fornecido."
+  default     = null
+}
+
+variable "data_volume_attachment_type" {
+  type        = string
+  description = "Tipo de attachment do volume de dados: paravirtualized ou iscsi."
+  default     = "paravirtualized"
+  validation {
+    condition     = contains(["paravirtualized", "iscsi"], var.data_volume_attachment_type)
+    error_message = "data_volume_attachment_type deve ser paravirtualized ou iscsi."
+  }
+}
+
+variable "data_volume_backup_policy_id" {
+  type        = string
+  description = "Opcional: ID de uma Backup Policy para associar ao volume de dados."
+  default     = null
+}

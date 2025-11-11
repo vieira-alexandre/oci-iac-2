@@ -30,37 +30,26 @@ module "nextcloud-network" {
   dns_label_prefix   = local.prefix
 }
 
-# module "vm-amd" {
-#   source                         = "./modules/compute"
-#   compartment_ocid               = var.compartment_ocid
-#   subnet_id                      = module.network-1.public_subnet_id
-#   instance_shape                 = "VM.Standard.E2.1.Micro"
-#   ocpus                          = 1
-#   memory_in_gbs                  = 1
-#   instance_display_name          = "${local.prefix}-amd-vm"
-#   image_operating_system         = "Canonical Ubuntu"
-#   image_operating_system_version = "24.04"
-#   image_id                       = var.image_id
-#   boot_volume_size_gbs           = null
-#   ssh_authorized_keys            = var.ssh_authorized_keys
-#   network_security_group_ids     = [module.network-1.db_nsg_id]
-# }
-#
-# module "vm-amd-db" {
-#   source                         = "./modules/compute"
-#   compartment_ocid               = var.compartment_ocid
-#   subnet_id                      = module.network-1.public_subnet_id
-#   instance_shape                 = "VM.Standard.E2.1.Micro"
-#   ocpus                          = 1
-#   memory_in_gbs                  = 1
-#   instance_display_name          = "${local.prefix}-vm-amd-db"
-#   image_operating_system         = "Canonical Ubuntu"
-#   image_operating_system_version = "24.04"
-#   image_id                       = var.image_id
-#   boot_volume_size_gbs           = null
-#   ssh_authorized_keys            = var.ssh_authorized_keys
-#   network_security_group_ids     = [module.network-1.db_nsg_id]
-# }
+
+module "nextcloud-vm-arm-a1-free-max" {
+  source                         = "./modules/compute"
+  compartment_ocid               = var.compartment_ocid
+  subnet_id                      = module.nextcloud-network.public_subnet_id
+  instance_shape                 = "VM.Standard.A1.Flex"
+  ocpus                          = 4
+  memory_in_gbs                  = 24
+  instance_display_name          = "${local.prefix}-vm-arm-a1-free-max"
+  image_operating_system         = "Canonical Ubuntu"
+  image_operating_system_version = "24.04"
+  image_id                       = "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaapguuyqd2u2373ml5r6suduay7fs4wwjey6yl2tcj5hoye3pheoca"
+  boot_volume_size_gbs           = null
+  ssh_authorized_keys            = var.ssh_authorized_keys
+  network_security_group_ids     = []
+  data_volume_size_gbs           = 150
+  data_volume_display_name       = "${local.prefix}-nextcloud-data-volume"
+  data_volume_attachment_type    = "paravirtualized"
+  data_volume_backup_policy_id   = null
+}
 
 # resource "oci_core_network_security_group_security_rule" "db_mysql_ingress" {
 #   network_security_group_id = module.network-1.db_nsg_id
