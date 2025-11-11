@@ -39,6 +39,7 @@ resource "oci_core_instance" "this" {
   create_vnic_details {
     subnet_id        = var.subnet_id
     assign_public_ip = true
+    nsg_ids          = var.network_security_group_ids
   }
 
   metadata = {

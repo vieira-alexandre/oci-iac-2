@@ -34,38 +34,15 @@ variable "public_subnet_cidr" {
   default = "10.0.1.0/24"
 }
 
-# Compute variables
-variable "instance_shape" {
-  type    = string
-  default = "VM.Standard.E2.1.Micro"
-}
-variable "instance_ocpus" {
-  type    = number
-  default = 1
-}
-variable "instance_memory_gbs" {
-  type    = number
-  default = 8
-}
-variable "image_operating_system" {
-  type    = string
-  default = "Canonical Ubuntu"
-}
-variable "image_operating_system_version" {
-  type    = string
-  default = "24.04"
-}
-variable "image_id" {
-  type        = string
-  description = "OCID explícito da imagem para a instância (sobrepõe busca por operating_system/version)."
-  default     = ""
-}
-
 # Chaves SSH autorizadas (pública(s) para login). Obrigatória para acesso SSH.
 variable "ssh_authorized_keys" {
   type        = string
   description = "Conteúdo da(s) chave(s) pública(s) (ex: id_ed25519.pub) a ser inserida em ~/.ssh/authorized_keys do usuario default (opc). Para múltiplas, separar por \n."
-  default     = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINARZhcnOZRQs+7TxUk/fLglYKwr3Bxa/GuAl1F7o1TP alexandrer0x@hotmail.com"
+  # Sem default para forçar fornecimento via secret (TF_VAR_ssh_authorized_keys)
+  validation {
+    condition     = length(trimspace(var.ssh_authorized_keys)) > 0
+    error_message = "Defina ao menos uma chave pública SSH em ssh_authorized_keys (via secret GitHub SSH_AUTHORIZED_KEYS)."
+  }
 }
 
 # Backend OCI Object Storage
