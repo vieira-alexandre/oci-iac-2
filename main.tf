@@ -36,8 +36,8 @@ module "nextcloud-vm-arm-a1-free-max" {
   compartment_ocid               = var.compartment_ocid
   subnet_id                      = module.nextcloud-network.public_subnet_id
   instance_shape                 = "VM.Standard.A1.Flex"
-  ocpus                          = 4
-  memory_in_gbs                  = 24
+  ocpus                          = 1
+  memory_in_gbs                  = 4
   instance_display_name          = "${local.prefix}-vm-arm-a1-free-max"
   image_operating_system         = "Canonical Ubuntu"
   image_operating_system_version = "24.04"

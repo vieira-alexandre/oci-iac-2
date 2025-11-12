@@ -94,8 +94,8 @@ resource "oci_core_volume_attachment" "data_attach" {
 }
 
 resource "oci_core_volume_backup_policy_assignment" "data_policy" {
-  count                 = var.data_volume_backup_policy_id != null && var.data_volume_backup_policy_id != "" && length(oci_core_volume.data) == 1 ? 1 : 0
-  asset_id              = oci_core_volume.data[0].id
-  policy_id             = var.data_volume_backup_policy_id
+  count     = var.data_volume_backup_policy_id != null && var.data_volume_backup_policy_id != "" && length(oci_core_volume.data) == 1 ? 1 : 0
+  asset_id  = oci_core_volume.data[0].id
+  policy_id = var.data_volume_backup_policy_id
   # Não é obrigatório; criado apenas se ID fornecido.
 }
