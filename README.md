@@ -16,6 +16,7 @@ modules/compute -> Instância flex com IP público
 2. Conta OCI e chave API (par de chaves) cadastrada no usuário.
 3. Preencha um arquivo `terraform.tfvars` (não versionado) com os OCIDs e parâmetros principais.
 
+
 Exemplo `terraform.tfvars`:
 ```
 tenancy_ocid = "ocid1.tenancy.oc1..xxxxx"
