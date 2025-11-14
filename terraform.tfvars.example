@@ -1,17 +1,29 @@
 tenancy_ocid = "ocid1.tenancy.oc1..example"
-user_ocid = "ocid1.user.oc1..example"
-fingerprint = "aa:bb:cc:dd:ee:ff:gg:hh"
-private_key_path = "${path.module}/secrets/oci_api_key.pem"
-region = "us-ashburn-1"
+user_ocid    = "ocid1.user.oc1..example"
+fingerprint  = "aa:bb:cc:dd:ee:ff:gg:hh"
+private_key  = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----" # Ou usar variáveis de ambiente TF_VAR_private_key
+region       = "sa-santiago-1"
 compartment_ocid = "ocid1.compartment.oc1..example"
-project_prefix = "demo"
+project_prefix   = "nextcloud"
 
-vcn_cidr = "10.0.0.0/16"
+# Network (ajuste caso queira importar VCN/Subnet existentes ou criar novas)
+vcn_cidr           = "10.0.0.0/16"
 public_subnet_cidr = "10.0.1.0/24"
 
-instance_shape = "VM.Standard.E2.1.Micro"
-instance_ocpus = 1
-instance_memory_gbs = 8
-image_operating_system = "Canonical Ubuntu"
-image_operating_system_version = "24.04"
-# image_id = "" # opcional: sobrepor uma imagem específica Ubuntu se desejar
+# Instância existente (preencher com valores reais antes de importar)
+instance_shape        = "VM.Standard.A1.Flex"
+ocpus                 = 1
+memory_in_gbs         = 6
+instance_display_name = "nextcloud-vm-arm-a1-free-max"
+# image_id: recupere com OCI CLI: oci compute instance get --instance-id <INSTANCE_OCID> --query 'data.imageId' --raw-output
+image_id              = "ocid1.image.oc1.sa-santiago-1...." # SUBSTITUIR pelo OCID real da imagem usada pela instância
+boot_volume_size_gbs  = 50
+
+# Chaves SSH (cole aqui a(s) públicas); pode usar TF_VAR_ssh_authorized_keys no ambiente em vez de colocar no arquivo
+ssh_authorized_keys = "ssh-ed25519 AAAA... usuario@host"
+
+# Volume de dados adicional (preencher se a instância tiver um volume extra e você quiser importá-lo)
+# Descubra tamanho com: oci compute volume-attachment list --availability-domain <AD_NAME> --compartment-id <COMPARTMENT_OCID> --instance-id <INSTANCE_OCID> --query 'data[0].volumeId' --raw-output | xargs -I {} oci compute volume get --volume-id {}
+# Se não quiser gerenciar volume adicional, mantenha 0
+data_volume_size_gbs        = 0
+data_volume_attachment_type = "paravirtualized"

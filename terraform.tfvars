@@ -1,0 +1,1 @@
+boot_volume_id = "ocid1.bootvolume.oc1.sa-santiago-1.abzwgljrdl2whyaxqmzw3nyjsi7h3fri3qzzpsotl3ek4tplqlmv24enzrwa"

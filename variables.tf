@@ -59,3 +59,9 @@ variable "object_storage_namespace" {
   type        = string
   description = "Namespace do Object Storage (geralmente obtido via OCI CLI)."
 }
+
+variable "boot_volume_id" {
+  type        = string
+  description = "OCID do boot volume existente da instância importada. Use para manter source_type=bootVolume e evitar mudança para image."
+  default     = ""
+}

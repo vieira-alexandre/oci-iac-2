@@ -6,6 +6,7 @@ provider "registry.terraform.io/oracle/oci" {
   constraints = ">= 5.0.0"
   hashes = [
     "h1:4tne2tTpbCVWsSmF28iji/ncQro7fRli20cOxwba3o0=",
+    "h1:ciwTltvOgMHE44pDXOtMspCKsBNn0QkTK4SCs5ZReOg=",
     "zh:389e9e7b542a1441f9d3944d5a895a93f5a5f28a2c5d762c91524c7ff29f4d2d",
     "zh:4e58b4b8be54a6642ca4fc27d4d994ef7d2f2472d67c4fb79de9b27e339c1e9d",
     "zh:79be316eb1bd411319895b1fdd7e81d61728402525d1bcb2a8b2215538759892",

@@ -35,6 +35,12 @@ variable "image_id" {
   default = ""
 }
 
+variable "boot_volume_id" {
+  type        = string
+  description = "OCID de um boot volume existente (para instância importada). Se definido, source_type será bootVolume e image_id será ignorado."
+  default     = ""
+}
+
 # Default 50GB para atender mínimo de imagens atuais; pode ser sobreposto.
 variable "boot_volume_size_gbs" {
   type        = number
