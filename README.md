@@ -84,6 +84,58 @@ Para destruir:
 terraform destroy
 ```
 
+## Importando uma Instância já existente (Criada via Console)
+Se você criou manualmente uma instância (ex: `nextcloud-vm-arm-a1-free-max`) e quer trazê-la para o controle do Terraform, siga:
+
+1. Garanta que o módulo `nextcloud_compute` está declarado em `main.tf` com os mesmos parâmetros (shape, ocpus, memory_in_gbs, display name, subnet).
+2. Descubra o OCID da imagem da instância existente:
+   ```cmd
+   oci compute instance get --instance-id <INSTANCE_OCID> --query "data.imageId" --raw-output
+   ```
+   Copie esse valor para `image_id` em `terraform.tfvars`.
+3. Ajuste variáveis: `instance_shape`, `ocpus`, `memory_in_gbs`, `instance_display_name` exatamente iguais.
+4. Rode `terraform init`.
+5. Execute o import:
+   ```cmd
+   terraform import module.nextcloud_compute.oci_core_instance.this ocid1.instance.oc1....
+   ```
+6. Verifique estado:
+   ```cmd
+   terraform state show module.nextcloud_compute.oci_core_instance.this | more
+   ```
+7. Ajuste diferenças até que `terraform plan` mostre `No changes`.
+
+### Importando volume de dados adicional
+Se a instância tiver um volume de dados extra:
+1. Defina `data_volume_size_gbs` no `terraform.tfvars` com o tamanho real (>=50).
+2. Import o volume:
+   ```cmd
+   terraform import module.nextcloud_compute.oci_core_volume.data[0] <VOLUME_OCID>
+   ```
+3. Import o attachment (se existir):
+   ```cmd
+   terraform import module.nextcloud_compute.oci_core_volume_attachment.data_attach[0] <ATTACHMENT_OCID>
+   ```
+4. Se houver política de backup associada: defina `data_volume_backup_policy_id` e importe:
+   ```cmd
+   terraform import module.nextcloud_compute.oci_core_volume_backup_policy_assignment.data_policy[0] <POLICY_ASSIGNMENT_OCID>
+   ```
+
+### Endereços de recursos para import
+- Instância: `module.nextcloud_compute.oci_core_instance.this`
+- Volume de dados: `module.nextcloud_compute.oci_core_volume.data[0]`
+- Attachment volume dados: `module.nextcloud_compute.oci_core_volume_attachment.data_attach[0]`
+- Backup policy assignment: `module.nextcloud_compute.oci_core_volume_backup_policy_assignment.data_policy[0]`
+
+### Dicas
+- Se não souber a subnet usada originalmente, obtenha com:
+  ```cmd
+  oci compute instance list-vnics --instance-id <INSTANCE_OCID> --query "data[0].subnetId" --raw-output
+  ```
+  Ajuste `public_subnet_cidr` e recrie a subnet apenas se quiser que Terraform gerencie a rede. Caso esteja importando rede existente, substitua `module.nextcloud-network.public_subnet_id` por o OCID da subnet diretamente e remova o módulo network.
+- Para shapes Flex, os valores `ocpus` e `memory_in_gbs` precisam bater exatamente ou o plano tentará alterar.
+- Se a imagem original não estiver mais disponível, considere criar um custom image e apontar seu OCID.
+
 ## Módulo Network
 Cria VCN, Internet Gateway, Route Table pública, Security List com portas 22/80/443 e uma subnet pública.
 

@@ -30,38 +30,23 @@ module "nextcloud-network" {
   dns_label_prefix   = local.prefix
 }
 
-
-# module "nextcloud-vm-arm-a1-free-max" {
-#   source                         = "./modules/compute"
-#   compartment_ocid               = var.compartment_ocid
-#   subnet_id                      = module.nextcloud-network.public_subnet_id
-#   instance_shape                 = "VM.Standard.A1.Flex"
-#   ocpus                          = 1
-#   memory_in_gbs                  = 6
-#   instance_display_name          = "${local.prefix}-vm-arm-a1-free-max"
-#   image_operating_system         = "Canonical Ubuntu"
-#   image_operating_system_version = "24.04"
-#   image_id                       = "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaapguuyqd2u2373ml5r6suduay7fs4wwjey6yl2tcj5hoye3pheoca"
-#   boot_volume_size_gbs           = null
-#   ssh_authorized_keys            = var.ssh_authorized_keys
-#   network_security_group_ids     = []
-#   data_volume_size_gbs           = 150
-#   data_volume_display_name       = "${local.prefix}-nextcloud-data-volume"
-#   data_volume_attachment_type    = "paravirtualized"
-#   data_volume_backup_policy_id   = null
-# }
-
-# resource "oci_core_network_security_group_security_rule" "db_mysql_ingress" {
-#   network_security_group_id = module.network-1.db_nsg_id
-#   direction                 = "INGRESS"
-#   protocol                  = "6"
-#   source_type               = "CIDR_BLOCK"
-#   source                    = "${module.vm-amd.private_ip}/32"
-#   description               = "Permitir MySQL apenas da vm-amd"
-#   tcp_options {
-#     destination_port_range {
-#       min = 3306
-#       max = 3306
-#     }
-#   }
-# }
+module "nextcloud_compute" {
+  source                         = "./modules/compute"
+  compartment_ocid               = var.compartment_ocid
+  subnet_id                      = module.nextcloud-network.public_subnet_id
+  instance_shape                 = "VM.Standard.A1.Flex"
+  ocpus                          = 1
+  memory_in_gbs                  = 6
+  instance_display_name          = "nextcloud-vm-arm-a1-free-max"
+  image_id                       = "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaapguuyqd2u2373ml5r6suduay7fs4wwjey6yl2tcj5hoye3pheoca"
+  boot_volume_id                 = var.boot_volume_id
+  image_operating_system         = "Canonical Ubuntu"
+  image_operating_system_version = "24.04"
+  boot_volume_size_gbs           = null
+  ssh_authorized_keys            = var.ssh_authorized_keys
+  network_security_group_ids     = []
+  data_volume_size_gbs           = 150
+  data_volume_display_name       = "nextcloud-nextcloud-data-volume"
+  data_volume_attachment_type    = "paravirtualized"
+  data_volume_backup_policy_id   = "ocid1.volumebackuppolicy.oc1.sa-santiago-1.amaaaaaacspfkcqaup7mubvfptmf3kfkotoxyrecl7curithonmoipu72qzq"
+}
