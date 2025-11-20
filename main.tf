@@ -35,8 +35,8 @@ module "nextcloud_compute" {
   compartment_ocid               = var.compartment_ocid
   subnet_id                      = module.nextcloud-network.public_subnet_id
   instance_shape                 = "VM.Standard.A1.Flex"
-  ocpus                          = 1
-  memory_in_gbs                  = 6
+  ocpus                          = 4
+  memory_in_gbs                  = 24
   instance_display_name          = "nextcloud-vm-arm-a1-free-max"
   image_id                       = "ocid1.image.oc1.sa-saopaulo-1.aaaaaaaapguuyqd2u2373ml5r6suduay7fs4wwjey6yl2tcj5hoye3pheoca"
   boot_volume_id                 = var.boot_volume_id
