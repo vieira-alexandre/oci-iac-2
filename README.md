@@ -1,3 +1,4 @@
+
 # OCI Infra (Produção Única)
 
 Infraestrutura enxuta para um ambiente único (produção) na Oracle Cloud Infrastructure usando Terraform.
